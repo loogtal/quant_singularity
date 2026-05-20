@@ -1,0 +1,35 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Secrets & local config
+.env
+.env.local
+
+# Runtime data (generated on your machine)
+storage/logs/
+storage/*.json
+storage/*.db
+storage/models/
+storage/memory.json
+storage/tuning.json
+!storage/.gitkeep
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+*.swp
+
+# Cursor
+.cursor/
+uploads/
+
+# Misc
+*.log
+.pytest_cache/
