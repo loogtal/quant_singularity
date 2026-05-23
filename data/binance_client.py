@@ -1,8 +1,5 @@
 """Binance USDT-M futures client via CCXT."""
 
-import os
-import time
-from typing import Optional
 
 import ccxt
 

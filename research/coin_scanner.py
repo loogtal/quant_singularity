@@ -7,7 +7,7 @@ from typing import Any
 
 import numpy as np
 
-from config.settings import MIN_24H_VOLUME_USDT, SCAN_TOP_N, USE_FUNDING_ARB
+from config.settings import SCAN_TOP_N, USE_FUNDING_ARB
 from data.binance_client import BinanceClient
 from data.market_data import MarketData
 from factors.alpha_factors import AlphaFactors

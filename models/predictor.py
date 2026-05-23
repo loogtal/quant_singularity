@@ -1,7 +1,6 @@
 """ML direction predictor — logistic regression (numpy), no sklearn required."""
 
 import json
-from pathlib import Path
 
 import numpy as np
 
@@ -38,7 +37,64 @@ class MLPredictor:
         vol_n = self.factors.normalize(f["volatility"], 0, 0.03)
         ret = (closes[-1] - closes[-5]) / closes[-5] if len(closes) >= 5 else 0.0
         ret_n = self.factors.normalize(ret, -0.03, 0.03)
-        return np.array([mom_n, trend_n, vol_n, ret_n, 1.0])
+
+        rsi_n = self._rsi_feature(closes)
+        macd_n = self._macd_feature(closes)
+        bb_pos = self._bb_position(closes)
+        obv_trend = self._obv_trend(closes, volumes)
+
+        return np.array([mom_n, trend_n, vol_n, ret_n, rsi_n, macd_n, bb_pos, obv_trend, 1.0])
+
+    @staticmethod
+    def _rsi_feature(closes: np.ndarray, period: int = 14) -> float:
+        if len(closes) < period + 1:
+            return 0.5
+        deltas = np.diff(closes[-(period + 1):])
+        gains = np.where(deltas > 0, deltas, 0)
+        losses = np.where(deltas < 0, -deltas, 0)
+        avg_gain = float(np.mean(gains))
+        avg_loss = float(np.mean(losses))
+        if avg_loss == 0:
+            return 1.0
+        rs = avg_gain / avg_loss
+        rsi = 100 - (100 / (1 + rs))
+        return float(np.clip(rsi / 100, 0, 1))
+
+    @staticmethod
+    def _macd_feature(closes: np.ndarray) -> float:
+        if len(closes) < 30:
+            return 0.5
+        ema12 = float(np.mean(closes[-12:]))
+        ema26 = float(np.mean(closes[-26:]))
+        price = closes[-1]
+        if price <= 0:
+            return 0.5
+        macd_pct = (ema12 - ema26) / price
+        return float(np.clip(macd_pct / 0.02 + 0.5, 0, 1))
+
+    @staticmethod
+    def _bb_position(closes: np.ndarray, period: int = 20) -> float:
+        if len(closes) < period:
+            return 0.5
+        window = closes[-period:]
+        mid = float(np.mean(window))
+        std = float(np.std(window))
+        if std <= 0:
+            return 0.5
+        upper = mid + 2 * std
+        lower = mid - 2 * std
+        return float(np.clip((closes[-1] - lower) / (upper - lower), 0, 1))
+
+    @staticmethod
+    def _obv_trend(closes: np.ndarray, volumes: np.ndarray | None, lookback: int = 20) -> float:
+        if volumes is None or len(volumes) < lookback or len(closes) < lookback:
+            return 0.5
+        direction = np.sign(np.diff(closes[-lookback:]))
+        obv = np.cumsum(direction * volumes[-(lookback - 1):])
+        if len(obv) < 5:
+            return 0.5
+        slope = (obv[-1] - obv[0]) / max(abs(obv).max(), 1)
+        return float(np.clip(slope + 0.5, 0, 1))
 
     def predict_proba(self, features: np.ndarray) -> float:
         if self.weights is None or len(self.weights) != len(features):

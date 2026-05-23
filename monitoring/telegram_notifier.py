@@ -1,6 +1,5 @@
 """Telegram bot alerts."""
 
-import json
 import urllib.parse
 import urllib.request
 

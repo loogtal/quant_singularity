@@ -8,6 +8,7 @@ class MetaBrain:
         regime = market_state.get("regime", "sideways")
         volatility = market_state.get("volatility", 0.5)
         risk_on = market_state.get("risk_on", True)
+        trend_str = market_state.get("trend_strength", 0.0)
 
         mode = "neutral"
         size_mult = 1.0
@@ -15,16 +16,19 @@ class MetaBrain:
 
         if regime == "bull" and risk_on and volatility < 0.7:
             mode = "aggressive"
-            size_mult = 1.15
-            min_confidence = 0.58
+            size_mult = 1.15 + (trend_str * 0.15)
+            min_confidence = 0.55
         elif regime == "bear" or not risk_on:
             mode = "defensive"
             size_mult = 0.65
-            min_confidence = 0.72
+            min_confidence = 0.68
         elif volatility > 0.75:
             mode = "cautious"
             size_mult = 0.5
             min_confidence = 0.75
+
+        if trend_str > 0.7 and regime != "sideways":
+            min_confidence = max(min_confidence - 0.05, 0.50)
 
         if portfolio_metrics:
             dd = portfolio_metrics.get("drawdown", 0)

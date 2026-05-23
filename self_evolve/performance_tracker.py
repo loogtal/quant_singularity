@@ -4,7 +4,6 @@ Tracks performance from trade history for self-improvement.
 
 import json
 from datetime import datetime, timezone
-from pathlib import Path
 
 from config.settings import RESET_STATS_ON_START, STORAGE_DIR
 

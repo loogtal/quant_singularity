@@ -35,8 +35,9 @@ class ModelTrainer:
     def train(
         self,
         symbol: str = "BTC/USDT:USDT",
-        epochs: int = 200,
-        lr: float = 0.05,
+        epochs: int = 300,
+        lr: float = 0.03,
+        l2_lambda: float = 0.01,
     ) -> dict:
         data = self.build_dataset(symbol)
         if data is None:
@@ -51,7 +52,8 @@ class ModelTrainer:
             z = X @ w + b
             pred = 1 / (1 + np.exp(-np.clip(z, -20, 20)))
             error = pred - y
-            w -= lr * (X.T @ error) / len(y)
+            grad_w = (X.T @ error) / len(y) + l2_lambda * w
+            w -= lr * grad_w
             b -= lr * float(np.mean(error))
 
         self.predictor.save_weights(w, b)
