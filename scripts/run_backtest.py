@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""python scripts/backtest.py [--symbol BTC/USDT:USDT] [--bars 500]"""
+"""python scripts/run_backtest.py [--symbol BTC/USDT:USDT] [--bars 500]"""
 
 import sys
 from pathlib import Path
