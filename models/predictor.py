@@ -1,7 +1,6 @@
 """ML direction predictor — logistic regression (numpy), no sklearn required."""
 
 import json
-from pathlib import Path
 
 import numpy as np
 
