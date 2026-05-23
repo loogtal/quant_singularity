@@ -20,6 +20,8 @@ from config.settings import (
     PERSIST_PORTFOLIO,
     USE_ML,
 )
+from core.daily_ops import DailyOps
+from meta.live_readiness import LiveReadiness
 from core.logger import get_logger
 from core.metrics import CycleMetrics
 from meta.market_state import MarketState
@@ -126,9 +128,11 @@ class TradingEngine:
         self.auto_tuner = AutoTuner()
         self.alerts = Alerting()
         self.online_learner = OnlineLearner() if USE_ML else None
+        self.daily_ops = DailyOps()
         self.last_trade_time: dict[str, float] = {}
         self.cycle = 0
         self._load_persisted_portfolio()
+        self.daily_ops.startup(LIVE_MODE)
         if AUTO_TRAIN_ML and USE_ML:
             result = ModelTrainer().train("BTC/USDT:USDT")
             print(f"[ML] Auto-train: {result}")
@@ -217,7 +221,8 @@ class TradingEngine:
 
         if len(self.portfolio.positions) >= MAX_POSITIONS:
             print("\nMax positions reached")
-            print(self.portfolio.status())
+            self._print_open_positions()
+            print(f"\nPortfolio: {self.portfolio.status()}")
             self._persist(market_state, perf, meta)
             time.sleep(LOOP_DELAY_SECONDS)
             return
@@ -311,10 +316,11 @@ class TradingEngine:
             if USE_ML and self.alpha_engine.ml:
                 try:
                     df_ml = self.alpha_engine.market.get_ohlcv_df(symbol, "15m", 120)
-                    ml_features = self.alpha_engine.ml.extract_features(
+                    raw = self.alpha_engine.ml.extract_features(
                         df_ml["close"].values,
                         df_ml["volume"].values if "volume" in df_ml else None,
                     )
+                    ml_features = raw.tolist()
                 except Exception:
                     pass
 
@@ -369,8 +375,21 @@ class TradingEngine:
                 f"winrate={wr:.1%} | PnL={sess['total_pnl']:.2f}"
             )
         print(f"Performance: winrate={perf['winrate']:.1%} daily={perf['daily_pnl_pct']:.2%}")
+        target_usdt = INITIAL_CAPITAL * DAILY_TARGET_PCT
+        daily_usdt = perf.get("daily_pnl", 0)
+        pct_to_target = (
+            perf["daily_pnl_pct"] / DAILY_TARGET_PCT * 100 if DAILY_TARGET_PCT else 0
+        )
+        print(
+            f"  Daily target: {daily_usdt:+.2f} / {target_usdt:.2f} USDT "
+            f"({pct_to_target:.0f}% of {DAILY_TARGET_PCT:.2%} goal)"
+        )
         if perf["daily_pnl_pct"] >= DAILY_TARGET_PCT:
-            print(f"  Daily target hit: {perf['daily_pnl_pct']:.2%} >= {DAILY_TARGET_PCT:.2%}")
+            print("  *** Daily target HIT ***")
+        readiness = LiveReadiness().score(perf, self.portfolio.drawdown)
+        print(f"  Live readiness: {readiness['score']}/100 ({readiness['verdict']})")
+        self.daily_ops.maybe_daily_report(self.portfolio.equity, self.portfolio.drawdown)
+        self.daily_ops.maybe_retrain_ml(self.cycle)
 
         m = CycleMetrics(
             cycle=self.cycle,
@@ -426,7 +445,12 @@ class TradingEngine:
         if self.alerts.enabled:
             print("Alerts: ON (Discord/Telegram)")
         if AUTO_TUNE_ENABLED:
-            print(f"Auto-tune: min_conf={self.auto_tuner.params.get('min_confidence')}")
+            p = self.auto_tuner.params
+            print(
+                f"Auto-tune: stored min_conf={p.get('min_confidence')}, "
+                f"risk_mult={p.get('risk_multiplier', 1.0)} "
+                f"(effective min_conf may be lower on flat days)"
+            )
         print("=" * 70)
         self.log.info("Trading engine started")
 
