@@ -50,10 +50,15 @@ quant_singularity/
 ## Scripts
 
 ```bash
+python scripts/validate.py          # preflight + backtest + readiness
 python scripts/backtest.py --symbol BTC/USDT:USDT --bars 500
 python scripts/walkforward.py --symbol BTC/USDT:USDT
 python scripts/train_ml.py --symbol BTC/USDT:USDT
+python scripts/daily_report.py        # daily stats + BTC/ETH backtest
+python scripts/preflight.py           # before live
 ```
+
+See [GOAL.md](GOAL.md) for mission and live checklist.
 
 ## Configuration
 

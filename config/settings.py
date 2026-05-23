@@ -85,7 +85,12 @@ MODEL_DIR = STORAGE_DIR / "models"
 
 # --- ML ---
 USE_ML = _env_bool("QS_USE_ML", True)
-AUTO_TRAIN_ML = _env_bool("QS_AUTO_TRAIN_ML", False)
+AUTO_TRAIN_ML = _env_bool("QS_AUTO_TRAIN_ML", True)
+ML_RETRAIN_EVERY_CYCLES = _env_int("QS_ML_RETRAIN_CYCLES", 500)
+
+# --- Daily ops ---
+AUTO_DAILY_REPORT = _env_bool("QS_DAILY_REPORT", True)
+PREFLIGHT_ON_START = _env_bool("QS_PREFLIGHT", True)
 
 # --- WebSocket ---
 USE_WEBSOCKET = _env_bool("QS_USE_WEBSOCKET", True)

@@ -78,10 +78,10 @@ class StrategyRouter:
 
         if total_w <= 0:
             side, confidence = "HOLD", 0.0
-        elif long_score > short_score and long_score / total_w > 0.45:
+        elif long_score > short_score and long_score / total_w > 0.38:
             side = "LONG"
             confidence = long_score / total_w
-        elif short_score > long_score and short_score / total_w > 0.45:
+        elif short_score > long_score and short_score / total_w > 0.38:
             side = "SHORT"
             confidence = short_score / total_w
         else:
@@ -96,7 +96,10 @@ class StrategyRouter:
             confidence *= 0.7
 
         # Ensemble unclear but alpha + scanner agree — follow alpha
-        if side == "HOLD" and alpha_dir in ("LONG", "SHORT") and alpha_conf >= 0.52:
+        scanner = float(alpha.get("scanner_score", 0) or 0)
+        if scanner >= 0.55:
+            alpha_conf = max(alpha_conf, scanner * 0.9)
+        if side == "HOLD" and alpha_dir in ("LONG", "SHORT") and alpha_conf >= 0.50:
             side = alpha_dir
             confidence = max(confidence, alpha_conf * 0.95)
 

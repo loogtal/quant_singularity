@@ -119,6 +119,7 @@ class AlphaEngine:
                 "regime": regime,
                 "factors": factors,
                 "ml": ml_info,
+                "scanner_score": scanner_score,
             }
 
         except Exception as e:

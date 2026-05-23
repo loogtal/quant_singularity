@@ -13,6 +13,7 @@ build/
 
 # Runtime data (generated on your machine)
 storage/logs/
+storage/reports/
 storage/*.json
 storage/*.db
 storage/models/
