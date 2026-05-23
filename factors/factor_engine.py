@@ -1,6 +1,5 @@
 """Unified factor computation for scanner, alpha, and strategies."""
 
-from typing import Any
 
 import numpy as np
 

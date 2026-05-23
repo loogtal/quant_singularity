@@ -1,7 +1,6 @@
 """Auto-tune min_confidence and risk from recent session performance."""
 
 import json
-from pathlib import Path
 
 from config.settings import MIN_CONFIDENCE, STORAGE_DIR
 
