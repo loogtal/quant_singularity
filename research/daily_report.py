@@ -2,7 +2,6 @@
 
 import json
 from datetime import datetime, timezone
-from pathlib import Path
 
 from config.settings import INITIAL_CAPITAL, STORAGE_DIR
 from meta.live_readiness import LiveReadiness

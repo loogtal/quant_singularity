@@ -43,6 +43,9 @@ from self_evolve.auto_tuner import AutoTuner
 from monitoring.alerting import Alerting
 from monitoring.dashboard import DashboardServer
 from data.realtime_feed import RealtimeFeed
+from data.htf_filter import HTFFilter
+from data.volume_filter import VolumeFilter
+from risk.correlation_filter import CorrelationFilter
 from models.online_learner import OnlineLearner
 from models.trainer import ModelTrainer
 
@@ -70,16 +73,37 @@ def stop_or_tp_hit(position, current_price):
     return None
 
 
-def build_risk_levels(side, entry_price, atr):
-    stop_distance = atr * 2.0
-    take_distance = atr * 3.5
+def build_risk_levels(side, entry_price, atr, regime="sideways", trend_strength=0.0):
+    """Dynamic R:R based on regime and trend strength."""
+    if regime == "bull" and side == "LONG":
+        sl_mult, tp_mult = 1.8, 4.5
+    elif regime == "bear" and side == "SHORT":
+        sl_mult, tp_mult = 1.8, 4.5
+    elif regime == "sideways":
+        sl_mult, tp_mult = 1.5, 2.5
+    else:
+        sl_mult, tp_mult = 2.0, 3.5
+
+    if trend_strength > 0.6:
+        tp_mult *= 1.2
+
+    stop_distance = atr * sl_mult
+    take_distance = atr * tp_mult
     if side == "LONG":
         stop_loss = entry_price - stop_distance
         take_profit = entry_price + take_distance
     else:
         stop_loss = entry_price + stop_distance
         take_profit = entry_price - take_distance
-    return round(stop_loss, 6), round(take_profit, 6)
+
+    partial_tp = None
+    partial_distance = atr * 1.8
+    if side == "LONG":
+        partial_tp = entry_price + partial_distance
+    else:
+        partial_tp = entry_price - partial_distance
+
+    return round(stop_loss, 6), round(take_profit, 6), round(partial_tp, 6)
 
 
 def update_trailing_stop(position):
@@ -95,6 +119,30 @@ def update_trailing_stop(position):
         new_sl = current_price + atr * 1.5
         if new_sl < position["stop_loss"]:
             position["stop_loss"] = round(float(new_sl), 6)
+
+
+MAX_HOLD_SECONDS = 3600 * 4  # 4 hours max hold
+
+
+def check_partial_tp(position, current_price):
+    """Check if partial take-profit level is hit (first 50% close)."""
+    if position.get("partial_closed"):
+        return False
+    partial_tp = position.get("partial_tp")
+    if partial_tp is None:
+        return False
+    side = position["side"]
+    if side == "LONG" and current_price >= partial_tp:
+        return True
+    if side == "SHORT" and current_price <= partial_tp:
+        return True
+    return False
+
+
+def should_time_exit(position, now):
+    """True if position has been open longer than MAX_HOLD_SECONDS."""
+    opened_at = position.get("opened_at", now)
+    return (now - opened_at) > MAX_HOLD_SECONDS
 
 
 def create_broker(price_feed=None):
@@ -128,6 +176,9 @@ class TradingEngine:
         self.auto_tuner = AutoTuner()
         self.alerts = Alerting()
         self.online_learner = OnlineLearner() if USE_ML else None
+        self.htf_filter = HTFFilter()
+        self.volume_filter = VolumeFilter()
+        self.correlation_filter = CorrelationFilter()
         self.daily_ops = DailyOps()
         self.last_trade_time: dict[str, float] = {}
         self.cycle = 0
@@ -140,12 +191,32 @@ class TradingEngine:
             DashboardServer().start()
 
     def manage_open_positions(self):
+        now = time.time()
         for pos in list(self.portfolio.positions):
             current_price = self.broker.get_price(pos["symbol"])
             self.portfolio.update_position_price(pos["symbol"], current_price)
             pos["current_price"] = current_price
             update_trailing_stop(pos)
+
+            if check_partial_tp(pos, current_price):
+                half_size = pos["size"] * 0.5
+                pnl_partial = self.broker.close_position(
+                    {**pos, "size": half_size}
+                )
+                pos["size"] -= half_size
+                pos["position_value"] = pos["entry_price"] * pos["size"]
+                pos["partial_closed"] = True
+                pos["stop_loss"] = pos["entry_price"]
+                self.portfolio.cash += pos["entry_price"] * half_size + pnl_partial
+                self.perf_tracker.record_trade(pnl_partial)
+                msg = f"PARTIAL TP | {pos['symbol']} | PnL={round(pnl_partial, 2)} (50% closed, SL→breakeven)"
+                print(f"\n{msg}")
+                self.log.info(msg)
+                continue
+
             hit = stop_or_tp_hit(pos, current_price)
+            if not hit and should_time_exit(pos, now):
+                hit = "TIME EXIT"
             if hit:
                 pnl = self.broker.close_position(pos)
                 self.portfolio.close_position(pos["symbol"], pnl)
@@ -249,6 +320,12 @@ class TradingEngine:
             if symbol in self.last_trade_time and (now - self.last_trade_time[symbol]) < COOLDOWN_SECONDS:
                 continue
 
+            open_syms = [p["symbol"] for p in self.portfolio.positions]
+            if open_syms and self.correlation_filter.is_too_correlated(symbol, open_syms):
+                if skip_reason is None:
+                    skip_reason = f"{symbol}: too correlated with open positions"
+                continue
+
             alpha = self.alpha_engine.generate_alpha(
                 symbol=symbol,
                 market_state=market_state,
@@ -265,6 +342,27 @@ class TradingEngine:
                         f"{signal['confidence']:.2f}, scanner {candidate['score']:.2f})"
                     )
                 continue
+
+            if not self.htf_filter.confirms(symbol, signal["side"]):
+                if skip_reason is None:
+                    skip_reason = f"{symbol}: HTF trend disagrees with {signal['side']}"
+                continue
+
+            try:
+                df_vol = self.alpha_engine.market.get_ohlcv_df(symbol, "15m", 40)
+                if not self.volume_filter.confirms_entry(df_vol["volume"].values):
+                    if skip_reason is None:
+                        skip_reason = f"{symbol}: low volume"
+                    continue
+                signal["confidence"] = self.volume_filter.confidence_adjust(
+                    df_vol["volume"].values, signal["confidence"]
+                )
+            except Exception:
+                pass
+
+            signal["confidence"] = self.htf_filter.confidence_adjust(
+                symbol, signal["side"], signal["confidence"]
+            )
 
             effective_conf = max(
                 signal["confidence"],
@@ -308,8 +406,12 @@ class TradingEngine:
                 continue
 
             entry_price = order["price"]
-            stop_loss, take_profit = build_risk_levels(
-                signal["side"], entry_price, risk["atr"]
+            stop_loss, take_profit, partial_tp = build_risk_levels(
+                signal["side"],
+                entry_price,
+                risk["atr"],
+                regime=market_state["regime"],
+                trend_strength=market_state.get("trend_strength", 0.0),
             )
 
             ml_features = None
@@ -333,6 +435,8 @@ class TradingEngine:
                 "position_value": entry_price * size,
                 "stop_loss": stop_loss,
                 "take_profit": take_profit,
+                "partial_tp": partial_tp,
+                "partial_closed": False,
                 "atr": risk["atr"],
                 "regime": market_state["regime"],
                 "opened_at": now,

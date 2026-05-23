@@ -25,9 +25,6 @@ class MarketState:
             "btc_change_24h": 0.0,
         }
 
-    def detect_regime(self, closes: np.ndarray) -> str:
-        return self.regime_classifier.classify(closes)
-
     def calculate_volatility(self, closes: np.ndarray, atr: float) -> float:
         if len(closes) < 2 or closes[-1] <= 0:
             return 0.5
@@ -41,20 +38,24 @@ class MarketState:
         try:
             df = self.market.get_ohlcv_df(self.REF_SYMBOL, timeframe="1h", limit=250)
             closes = df["close"].values
+            highs = df["high"].values if "high" in df else None
+            lows = df["low"].values if "low" in df else None
             atr = self.market.get_atr(self.REF_SYMBOL, timeframe="1h", period=14)
 
             change_24h = 0.0
             if len(closes) >= 24:
                 change_24h = (closes[-1] - closes[-24]) / closes[-24]
 
-            regime = self.detect_regime(closes)
+            regime = self.regime_classifier.classify(closes, highs, lows)
             volatility = self.calculate_volatility(closes, atr)
+            trend_str = self.regime_classifier.trend_strength(closes, highs, lows)
             risk_on = self.regime_classifier.risk_on(regime, volatility)
 
             self.current_state = {
                 "timestamp": time.time(),
                 "regime": regime,
                 "volatility": volatility,
+                "trend_strength": round(trend_str, 4),
                 "risk_on": risk_on,
                 "btc_change_24h": round(float(change_24h), 4),
             }

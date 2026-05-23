@@ -1,4 +1,3 @@
-import numpy as np
 
 from config.settings import (
     MAX_DRAWDOWN,
