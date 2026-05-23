@@ -45,8 +45,9 @@ class WalkForwardBacktest:
 
         for train_sl, test_sl in windows:
             train_c = closes[train_sl]
-            f = self.factors.compute(train_c)
-            bias = self.factors.direction_from_factors(f)
+            momentum = self.factors.momentum_factor(train_c)
+            trend = self.factors.trend_strength(train_c)
+            bias = "LONG" if momentum > 0 and trend > 0 else "SHORT" if momentum < 0 and trend < 0 else "HOLD"
 
             pnl, trades, w = self._simulate_segment(
                 closes[test_sl], highs[test_sl], lows[test_sl], bias

@@ -168,14 +168,9 @@ class TradingEngine:
                     pos["symbol"], hit, pnl, self.portfolio.equity
                 )
                 if self.online_learner and pos.get("ml_features") is not None:
-                    try:
-                        self.online_learner.update(
-                            pos["ml_features"], won=(pnl >= 0)
-                        )
-                    except (TypeError, ValueError) as e:
-                        self.log.warning(
-                            f"online_learner skip ({pos['symbol']}): {e}"
-                        )
+                    self.online_learner.update(
+                        pos["ml_features"], won=(pnl >= 0)
+                    )
 
     def _print_open_positions(self) -> None:
         if not self.portfolio.positions:
