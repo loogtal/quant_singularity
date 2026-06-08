@@ -86,10 +86,24 @@ class StateManager:
         return loaded
 
     def _write_state_file(self, state: dict) -> None:
-        tmp = Path(self.state_path).with_suffix(".json.tmp")
-        with open(tmp, "w") as f:
-            json.dump(_json_safe(state), f, indent=4)
-        tmp.replace(self.state_path)
+        target = Path(self.state_path)
+        tmp    = target.parent / (target.name + ".tmp")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            with open(tmp, "w") as f:
+                json.dump(_json_safe(state), f, indent=4)
+            tmp.replace(target)
+        except Exception:
+            # Fallback: write directly without atomic rename
+            try:
+                with open(target, "w") as f:
+                    json.dump(_json_safe(state), f, indent=4)
+            except Exception:
+                pass
+            try:
+                tmp.unlink(missing_ok=True)
+            except Exception:
+                pass
 
     def save_state(self, state=None):
 

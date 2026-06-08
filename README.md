@@ -10,6 +10,8 @@ Autonomous AI crypto trader for **Binance USDT-M Futures**. Paper trading by def
 - Risk: ATR stops, trailing stop, max drawdown, daily loss cap
 - Self-tuning confidence + reflection
 - WebSocket prices, optional dashboard & alerts
+- Optional dual mode: passive trend book + active intraday book with conflict checks
+- Dynamic capital allocation shifts idle capital toward the better-performing book
 
 ## Quick start
 
@@ -56,6 +58,7 @@ python scripts/walkforward.py --symbol BTC/USDT:USDT
 python scripts/train_ml.py --symbol BTC/USDT:USDT
 python scripts/daily_report.py        # daily stats + BTC/ETH backtest
 python scripts/preflight.py           # before live
+python scripts/clean_workspace.py     # remove local cache clutter
 ```
 
 See [GOAL.md](GOAL.md) for mission and live checklist.
@@ -74,6 +77,9 @@ Copy `.env.example` → `.env`. Key variables:
 | `QS_USE_ML` | true | Blend ML into alpha |
 | `QS_USE_WEBSOCKET` | true | Fast price feed |
 | `QS_DASHBOARD` | true | Web UI on port 8787 |
+| `QS_DUAL_MODE` | false | Run passive + active strategy books together |
+| `QS_DYNAMIC_ALLOCATION` | true | Rebalance idle capital based on strategy results |
+| `QS_DUAL_ALLOW_SAME_SYMBOL_STACKING` | false | Allow both books to hold the same symbol/side |
 
 ## Live trading (careful)
 

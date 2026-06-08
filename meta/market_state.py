@@ -24,6 +24,7 @@ class MarketState:
             "risk_on": True,
             "btc_change_24h": 0.0,
         }
+        self._last_fallback_log: float = 0.0   # rate-limit log spam
 
     def detect_regime(self, closes: np.ndarray) -> str:
         return self.regime_classifier.classify(closes)
@@ -37,7 +38,7 @@ class MarketState:
         combined = atr_pct * 0.6 + ret_vol * 0.4
         return round(float(np.clip(combined / 0.05, 0.05, 0.99)), 4)
 
-    def update(self) -> dict:
+    def update(self, intel: dict | None = None) -> dict:
         try:
             df = self.market.get_ohlcv_df(self.REF_SYMBOL, timeframe="1h", limit=250)
             closes = df["close"].values
@@ -47,7 +48,11 @@ class MarketState:
             if len(closes) >= 24:
                 change_24h = (closes[-1] - closes[-24]) / closes[-24]
 
-            regime = self.detect_regime(closes)
+            # Use market intel fusion when available — catches early regime shifts
+            if intel:
+                regime = self.regime_classifier.classify_with_intel(closes, intel)
+            else:
+                regime = self.detect_regime(closes)
             volatility = self.calculate_volatility(closes, atr)
             risk_on = self.regime_classifier.risk_on(regime, volatility)
 
@@ -59,10 +64,13 @@ class MarketState:
                 "btc_change_24h": round(float(change_24h), 4),
             }
         except Exception as e:
-            print(f"[MarketState] fallback: {e}")
-            self.current_state["timestamp"] = time.time()
+            now = time.time()
+            if now - self._last_fallback_log > 60:   # log at most once per minute
+                print(f"[MarketState] fallback: {e}")
+                self._last_fallback_log = now
+            self.current_state["timestamp"] = now
 
         return self.current_state
 
-    def get_market_state(self) -> dict:
-        return self.update()
+    def get_market_state(self, intel: dict | None = None) -> dict:
+        return self.update(intel=intel)

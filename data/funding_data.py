@@ -7,18 +7,20 @@ from data.binance_client import BinanceClient
 
 
 class FundingData:
-    CACHE_TTL = 300  # 5 min
+    # Class-level cache — shared across ALL instances so new FundingData() calls
+    # never refetch within the TTL window (funding rates update every 8 hours)
+    CACHE_TTL = 3600   # 1 hour — safe since Binance funding settles every 8h
+    _cache: dict[str, tuple[float, dict]] = {}
+    _last_warn: dict[str, float] = {}   # rate-limit log spam guard
 
     def __init__(self):
         self.client = BinanceClient()
-        self._cache: dict[str, tuple[float, dict]] = {}
 
     def get_funding(self, symbol: str) -> dict[str, Any]:
         now = time.time()
-        if symbol in self._cache:
-            ts, data = self._cache[symbol]
-            if now - ts < self.CACHE_TTL:
-                return data
+        cached = FundingData._cache.get(symbol)
+        if cached and (now - cached[0]) < self.CACHE_TTL:
+            return cached[1]
 
         ex = self.client.get_exchange()
         rate = 0.0
@@ -26,8 +28,10 @@ class FundingData:
             try:
                 info = ex.fetch_funding_rate(symbol)
                 rate = float(info.get("fundingRate") or 0)
-            except Exception as e:
-                print(f"[Funding] {symbol}: {e}")
+            except Exception:
+                # Silently fall back to last cached value or 0
+                if cached:
+                    return cached[1]
 
         data = {
             "symbol": symbol,
@@ -35,7 +39,7 @@ class FundingData:
             "funding_pct": round(rate * 100, 4),
             "bias": self._bias_from_rate(rate),
         }
-        self._cache[symbol] = (now, data)
+        FundingData._cache[symbol] = (now, data)
         return data
 
     @staticmethod

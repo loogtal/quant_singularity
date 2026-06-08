@@ -16,6 +16,8 @@ from config.settings import (
 
 class BinanceClient:
     _exchange = None
+    _ticker_cache: dict = {}      # symbol → {"price": float, "ts": float}
+    _TICKER_CACHE_TTL = 30        # use cache if fresh within 30s
 
     def __init__(self):
         if BinanceClient._exchange is None:
@@ -55,9 +57,18 @@ class BinanceClient:
         ex = BinanceClient._exchange
         if ex:
             try:
-                return ex.fetch_ticker(symbol)
+                ticker = ex.fetch_ticker(symbol)
+                # Update cache on success
+                BinanceClient._ticker_cache[symbol] = {
+                    "ticker": ticker,
+                    "ts": time.time(),
+                }
+                return ticker
             except Exception:
-                pass
+                # Return cached ticker if fresh enough
+                cached = BinanceClient._ticker_cache.get(symbol)
+                if cached and (time.time() - cached["ts"]) < self._TICKER_CACHE_TTL:
+                    return cached["ticker"]
         raise ConnectionError(f"No ticker for {symbol}")
 
     def get_ohlcv(
@@ -97,15 +108,17 @@ class BinanceClient:
             symbols.append(sym)
 
         try:
-            tickers = ex.fetch_tickers(symbols[:80])
+            # Fetch all available tickers for full universe ranking
+            tickers = ex.fetch_tickers(symbols)
             ranked = sorted(
                 tickers.items(),
                 key=lambda x: float(x[1].get("quoteVolume") or 0),
                 reverse=True,
             )
-            return [s for s, _ in ranked[:50]]
+            # Return top 200 by volume — scanner will filter further
+            return [s for s, _ in ranked[:200]]
         except Exception:
-            return symbols[:30]
+            return symbols[:150]
 
     def fetch_balance_usdt(self) -> float:
         ex = BinanceClient._exchange

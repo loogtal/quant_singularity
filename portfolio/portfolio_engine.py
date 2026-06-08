@@ -19,6 +19,8 @@ class PortfolioEngine:
 
         self.drawdown = 0
 
+        self._peak_equity = float(initial_cash)  # running high-water mark
+
     def has_open_position(self, symbol):
 
         for p in self.positions:
@@ -38,10 +40,11 @@ class PortfolioEngine:
         return None
 
     def add_position(self, position):
-
+        leverage = float(position.get("leverage", 1))
+        margin   = round(position["position_value"] / leverage, 4)
+        position["margin"] = margin          # stored for close/half-close
         self.positions.append(position)
-
-        self.cash -= position["position_value"]
+        self.cash -= margin
 
     def close_position(self, symbol, pnl):
 
@@ -50,7 +53,8 @@ class PortfolioEngine:
         if not pos:
             return
 
-        self.cash += pos["position_value"] + pnl
+        margin = pos.get("margin", pos["position_value"])
+        self.cash += margin + pnl
 
         self.realized_pnl += pnl
 
@@ -102,19 +106,17 @@ class PortfolioEngine:
             self.cash
             + total_unrealized
             + sum([
-                p["position_value"]
+                p.get("margin", p["position_value"])
                 for p in self.positions
             ])
         )
 
-        peak = max(
-            self.initial_cash,
-            self.equity
-        )
+        if self.equity > self._peak_equity:
+            self._peak_equity = self.equity
 
         self.drawdown = max(
             0,
-            (peak - self.equity) / peak
+            (self._peak_equity - self.equity) / self._peak_equity
         )
 
     def current_drawdown(self) -> float:
@@ -125,6 +127,9 @@ class PortfolioEngine:
         self.positions = list(positions)
         self.realized_pnl = float(realized_pnl)
         self.update_equity()
+        # Don't reset peak on restore — keep the high-water mark
+        if self.equity > self._peak_equity:
+            self._peak_equity = self.equity
 
     def status(self):
 

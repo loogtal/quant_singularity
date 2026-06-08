@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  macOS LaunchAgent for Quant Singularity
+  =========================================
+  Installs as a user-level service that starts automatically on login
+  and restarts automatically if it exits.
+
+  Installation (one-time):
+    cp scripts/com.quantsingularity.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.quantsingularity.plist
+
+  Start now:
+    launchctl start com.quantsingularity
+
+  Stop:
+    launchctl stop com.quantsingularity
+
+  Uninstall:
+    launchctl unload ~/Library/LaunchAgents/com.quantsingularity.plist
+    rm ~/Library/LaunchAgents/com.quantsingularity.plist
+
+  Check status:
+    launchctl list | grep quantsingularity
+
+  View logs:
+    tail -f /Users/loogtal/quant_singularity/storage/logs/trading.log
+    tail -f /Users/loogtal/quant_singularity/storage/logs/watchdog.log
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.quantsingularity</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/loogtal/quant_singularity/scripts/start.sh</string>
+    </array>
+
+    <!-- Start automatically when logged in -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Restart automatically if it exits -->
+    <key>KeepAlive</key>
+    <true/>
+
+    <!-- Throttle restarts: wait 10s between automatic restarts -->
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <!-- Working directory -->
+    <key>WorkingDirectory</key>
+    <string>/Users/loogtal/quant_singularity</string>
+
+    <!-- Log stdout/stderr (watchdog already handles its own logging) -->
+    <key>StandardOutPath</key>
+    <string>/Users/loogtal/quant_singularity/storage/logs/launchd_stdout.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/loogtal/quant_singularity/storage/logs/launchd_stderr.log</string>
+
+    <!-- Low priority so other apps aren't affected -->
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>

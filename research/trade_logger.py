@@ -41,9 +41,18 @@ class TradeLogger:
             qty REAL,
             pnl REAL,
             strategy TEXT,
-            regime TEXT
+            regime TEXT,
+            signal_mode TEXT,
+            confidence REAL,
+            reason TEXT
         )
         """)
+        # Add new columns if they don't exist yet (for existing databases)
+        for col, typ in [("signal_mode","TEXT"), ("confidence","REAL"), ("reason","TEXT")]:
+            try:
+                cursor.execute(f"ALTER TABLE trades ADD COLUMN {col} {typ}")
+            except Exception:
+                pass
 
         self.conn.commit()
 
@@ -53,17 +62,10 @@ class TradeLogger:
 
         cursor.execute("""
         INSERT INTO trades (
-            timestamp,
-            symbol,
-            side,
-            entry_price,
-            exit_price,
-            qty,
-            pnl,
-            strategy,
-            regime
+            timestamp, symbol, side, entry_price, exit_price,
+            qty, pnl, strategy, regime, signal_mode, confidence, reason
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             str(datetime.utcnow()),
             trade.get("symbol"),
@@ -73,7 +75,10 @@ class TradeLogger:
             trade.get("qty"),
             trade.get("pnl"),
             trade.get("strategy"),
-            trade.get("regime")
+            trade.get("regime"),
+            trade.get("signal_mode", ""),
+            trade.get("confidence", 0),
+            trade.get("reason", ""),
         ))
 
         self.conn.commit()

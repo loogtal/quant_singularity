@@ -99,8 +99,19 @@ def update_trailing_stop(position):
 
 def create_broker(price_feed=None):
     if LIVE_MODE:
-        from execution.live_broker import LiveBroker
-        return LiveBroker(price_feed=price_feed)
+        try:
+            from execution.live_broker import LiveBroker
+            broker = LiveBroker(price_feed=price_feed)
+            import logging
+            logging.getLogger("QS").info("[LiveBroker] Connected to Binance — LIVE MODE ACTIVE")
+            return broker
+        except Exception as exc:
+            import logging
+            logging.getLogger("QS").error(
+                f"[LiveBroker] FAILED to connect: {exc} — "
+                f"falling back to PAPER MODE (set QS_LIVE_MODE=false to silence)"
+            )
+            # Fall through to paper broker so bot doesn't crash loop
     return PaperBroker(price_feed=price_feed)
 
 
