@@ -1,6 +1,5 @@
 """Trend following — EMA alignment + slope."""
 
-import numpy as np
 
 from factors.factor_engine import FactorEngine
 

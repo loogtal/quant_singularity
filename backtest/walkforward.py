@@ -1,6 +1,5 @@
 """Walk-forward backtest — rolling train/test windows."""
 
-import numpy as np
 
 from data.market_data import MarketData
 from factors.factor_engine import FactorEngine

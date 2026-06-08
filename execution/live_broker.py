@@ -15,7 +15,6 @@ from __future__ import annotations
 import json
 import time
 from datetime import datetime, timezone
-from pathlib import Path
 
 from config.settings import LIVE_MODE, STORAGE_DIR
 from data.binance_client import BinanceClient

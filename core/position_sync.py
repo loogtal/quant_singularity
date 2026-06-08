@@ -22,7 +22,7 @@ import time
 from pathlib import Path
 from typing import Optional
 
-from config.settings import LIVE_MODE, STORAGE_DIR
+from config.settings import LIVE_MODE
 from core.logger import get_logger
 
 _log = get_logger()

@@ -2,7 +2,6 @@
 
 import json
 import random
-from pathlib import Path
 
 from config.settings import STORAGE_DIR
 

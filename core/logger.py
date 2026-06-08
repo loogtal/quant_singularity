@@ -1,7 +1,6 @@
 """Structured logging for cycles, trades, and halts."""
 
 import logging
-from pathlib import Path
 
 from config.settings import STORAGE_DIR
 

@@ -35,7 +35,6 @@ Combined CONVICTION SCORE (0-1):
 from __future__ import annotations
 
 import time
-from typing import Optional
 
 _CACHE_TTL = 300   # 5 min — microstructure data changes slowly enough
 

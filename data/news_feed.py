@@ -26,7 +26,6 @@ import json
 import time
 from typing import Optional
 from urllib.request import urlopen, Request
-from urllib.error import URLError
 
 _CACHE_TTL = 600   # 10 min
 

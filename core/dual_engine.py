@@ -1936,9 +1936,6 @@ class DualEngine:
         }
 
     def _dual_status(self, totals: dict, strategy_stats: dict) -> dict:
-        active_profit = (
-            self.active_portfolio.realized_pnl + self.active_portfolio.unrealized_pnl
-        )
         intel = self._last_intel
         return {
             "passive": {

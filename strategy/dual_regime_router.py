@@ -85,7 +85,6 @@ class DualRegimeRouter:
         regime = market_state.get("regime", REGIME_SIDEWAYS)
         vol    = float(market_state.get("volatility", 0.5))
         hour   = datetime.now(timezone.utc).hour
-        sess   = self._session_mode_bias()
 
         # ── Volatile regime or high-vol ───────────────────────────────────────
         if regime == REGIME_VOLATILE or vol > HIGH_VOL:

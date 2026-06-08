@@ -1,6 +1,5 @@
 """Momentum strategy — ride short-term impulse."""
 
-import numpy as np
 
 from factors.factor_engine import FactorEngine
 

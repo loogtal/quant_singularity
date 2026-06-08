@@ -34,7 +34,6 @@ cyan   = lambda t: _color(t, "96")
 
 def main():
     now = datetime.now(timezone.utc)
-    data = {}
 
     # ── System state ─────────────────────────────────────────────────────────
     state_file = STORAGE / "system_state.json"
@@ -67,7 +66,7 @@ def main():
     # ── Trade DB ─────────────────────────────────────────────────────────────
     today_trades = all_trades = clean_trades = 0
     today_pnl = today_wr = all_wr = clean_wr = 0.0
-    all_pnl = clean_pnl = 0.0
+    clean_pnl = 0.0
     by_mode: dict = {}
     daily_avg_pnl = 0.0
 
@@ -89,7 +88,7 @@ def main():
                 SELECT COUNT(*), SUM(CASE WHEN pnl>0 THEN 1 ELSE 0 END), ROUND(SUM(pnl),2)
                 FROM trades
             """).fetchone()
-            all_trades, all_wins, all_pnl = row2[0] or 0, row2[1] or 0, row2[2] or 0.0
+            all_trades, all_wins, _ = row2[0] or 0, row2[1] or 0, row2[2] or 0.0
             all_wr = all_wins / all_trades if all_trades else 0
 
             # "Clean" WR: since Jun 1 2026 (after system fixes)
@@ -121,7 +120,7 @@ def main():
                 by_mode[r[0]] = {"trades": r[1], "wins": r[2], "pnl": r[3]}
 
             conn.close()
-        except Exception as e:
+        except Exception:
             pass
 
     # ── Evolved params ───────────────────────────────────────────────────────
@@ -224,10 +223,14 @@ def main():
 
     # Performance (clean: since Jun 1)
     cwr_str = green(f"{clean_wr:.0%}") if clean_wr >= 0.50 else red(f"{clean_wr:.0%}") if clean_wr < 0.35 else yellow(f"{clean_wr:.0%}")
-    awr_str = green(f"{all_wr:.0%}") if all_wr >= 0.40 else red(f"{all_wr:.0%}") if all_wr < 0.30 else yellow(f"{all_wr:.0%}")
+    legacy_trades = all_trades - clean_trades
+    legacy_wins   = (all_wr * all_trades) - (clean_wr * clean_trades)
+    legacy_wr     = legacy_wins / legacy_trades if legacy_trades else 0
+    lwr_str = yellow(f"{legacy_wr:.0%}")
     print(bold("  PERFORMANCE"))
-    print(f"    Since fixes : {clean_trades:3} trades  WR={cwr_str}  PnL=${clean_pnl:+.2f}  ← real signal")
-    print(f"    All-time    : {all_trades:3} trades  WR={awr_str}  (includes legacy garbage trades)")
+    print(f"    Current     : {clean_trades:3} trades  WR={cwr_str}  PnL=${clean_pnl:+.2f}  ← real signal (since 2026-06-01 fixes)")
+    if legacy_trades:
+        print(f"    Legacy      : {legacy_trades:3} trades  WR={lwr_str}  (pre-fix, archived for reference only)")
     if by_mode:
         print(f"    By mode (since Jun 1):")
         for mode, s in by_mode.items():

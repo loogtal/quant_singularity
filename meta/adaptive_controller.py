@@ -35,7 +35,6 @@ import json
 import time
 from collections import deque
 from datetime import datetime, timezone
-from pathlib import Path
 
 from config.settings import STORAGE_DIR, MIN_CONFIDENCE
 

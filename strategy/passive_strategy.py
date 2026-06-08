@@ -17,7 +17,6 @@ TP / SL use ATR-based distances instead of fixed percentages:
 import numpy as np
 
 from config.dual_settings import (
-    PASSIVE_MAX_POSITIONS,
     PASSIVE_TIMEFRAMES,
     PASSIVE_TAKE_PROFIT,
     PASSIVE_STOP_LOSS,

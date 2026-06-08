@@ -108,10 +108,9 @@ def _import_checks():
 def _config_checks():
     from config.dual_settings import (
         PASSIVE_CAPITAL, ACTIVE_CAPITAL, TOTAL_CAPITAL,
-        KILL_SWITCH_EQUITY, MAX_PORTFOLIO_DRAWDOWN,
-        PASSIVE_MAX_DRAWDOWN, PASSIVE_TAKE_PROFIT, PASSIVE_STOP_LOSS,
-        ACTIVE_TAKE_PROFIT, ACTIVE_STOP_LOSS, ACTIVE_MAX_DAILY_LOSS,
-        PASSIVE_MAX_POSITIONS, ACTIVE_MAX_POSITIONS,
+        KILL_SWITCH_EQUITY,
+        PASSIVE_TAKE_PROFIT, PASSIVE_STOP_LOSS,
+        ACTIVE_TAKE_PROFIT, ACTIVE_STOP_LOSS,
         ACTIVE_MIN_CAPITAL_FRACTION, ACTIVE_MAX_CAPITAL_FRACTION,
     )
 
@@ -663,8 +662,8 @@ def _print_results():
 
 def _bandit_checks():
     def imports_ok():
-        from meta.strategy_bandit import DualStrategyBandit, ThompsonBandit
-        b = DualStrategyBandit()
+        from meta.strategy_bandit import DualStrategyBandit
+        DualStrategyBandit()
         return "DualStrategyBandit instantiated"
 
     def select_returns_valid_arm():
@@ -784,7 +783,7 @@ def _daily_profit_checks():
 def _lgbm_checks():
     def imports_ok():
         from models.lgbm_predictor import LGBMPredictor, _LGB_OK
-        p = LGBMPredictor()
+        LGBMPredictor()
         return f"LGBMPredictor instantiated (lightgbm_available={_LGB_OK})"
 
     def feature_extraction():

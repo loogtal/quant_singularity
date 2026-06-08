@@ -123,7 +123,6 @@ def _check_capital_config():
         ACTIVE_MAX_DAILY_LOSS, ACTIVE_DAILY_TARGET_PCT,
         KILL_SWITCH_EQUITY,
     )
-    msgs = []
     if TOTAL_CAPITAL <= 0:
         raise ValueError("QS_TOTAL_CAPITAL must be > 0")
     if ACTIVE_CAPITAL <= 0 or PASSIVE_CAPITAL <= 0:

@@ -7,9 +7,10 @@ end-of-day summary (fired at 23:00 UTC by DualEngine._report()).
 import json
 from collections import defaultdict
 from datetime import datetime, timezone
-from pathlib import Path
 
 from config.settings import INITIAL_CAPITAL, STORAGE_DIR
+from self_evolve.performance_tracker import PerformanceTracker
+from meta.live_readiness import LiveReadiness
 
 
 class DailyReport:

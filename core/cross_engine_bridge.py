@@ -32,7 +32,6 @@ import json
 import time
 from collections import defaultdict
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Optional
 
 from config.settings import STORAGE_DIR
@@ -211,7 +210,6 @@ class CrossEngineBridge:
         return "tied"
 
     def snapshot(self) -> dict:
-        now  = time.time()
         return {
             "avoided_symbols":    self.avoided_symbols(),
             "hot_for_passive":    self.hot_coins_for_passive(),

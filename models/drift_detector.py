@@ -22,7 +22,6 @@ import json
 import time
 from collections import deque
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Optional
 
 import numpy as np

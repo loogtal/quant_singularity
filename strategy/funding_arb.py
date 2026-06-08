@@ -29,7 +29,6 @@ Why this works:
 from __future__ import annotations
 
 import time
-from typing import Any
 
 from data.funding_data import FundingData
 
