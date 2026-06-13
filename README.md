@@ -42,7 +42,7 @@ quant_singularity/
 ├── execution/              # Paper & live brokers
 ├── models/                 # ML predictor, trainer, online learning
 ├── research/               # Coin scanner, trade log, performance
-├── self_evolve/            # Reflection, auto-tuner
+├── self_evolve/            # Bayesian strategy parameter evolution
 ├── monitoring/             # Dashboard, Discord/Telegram alerts
 ├── backtest/               # Quick & walk-forward backtests
 ├── scripts/                # CLI utilities
@@ -52,13 +52,13 @@ quant_singularity/
 ## Scripts
 
 ```bash
-python scripts/validate.py          # preflight + backtest + readiness
-python scripts/backtest.py --symbol BTC/USDT:USDT --bars 500
+python scripts/validate_dual.py     # full dual-engine system check (66 checks)
+python scripts/golive_check.py      # go-live readiness gate
+./scripts/status.py                 # live equity, drawdown, regime status
+python scripts/backtest_dual.py --symbol BTC/USDT:USDT --bars 500
 python scripts/walkforward.py --symbol BTC/USDT:USDT
 python scripts/train_ml.py --symbol BTC/USDT:USDT
-python scripts/daily_report.py        # daily stats + BTC/ETH backtest
-python scripts/preflight.py           # before live
-python scripts/clean_workspace.py     # remove local cache clutter
+python scripts/clean_workspace.py   # remove local cache clutter
 ```
 
 See [GOAL.md](GOAL.md) for mission and live checklist.

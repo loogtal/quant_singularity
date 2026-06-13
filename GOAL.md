@@ -6,24 +6,25 @@
 - เลือกเหรียญ · คิดกลยุทธ์ · เปิด/ปิด · ปรับตัวเอง
 - เป้ารายวัน = % ของทุน (`QS_DAILY_TARGET`, default 0.5%/วัน)
 
-## ระบบทำอะไรให้แล้ว
+## ระบบทำอะไรให้แล้ว (Dual-Engine)
 
 | ชั้น | โมดูล |
 |------|--------|
-| ข้อมูล | Binance, WebSocket, funding |
-| สัญญาณ | Scanner, Alpha, ML, 4 strategies |
-| ความเสี่ยง | SL/TP, kill switch, live safety |
-| ปรับตัว | Auto-tuner, reflection, online ML |
-| รายงาน | Daily report, live readiness score |
-| ทดสอบ | backtest, walkforward, validate |
+| ข้อมูล | Binance, WebSocket, funding rate |
+| สัญญาณ | Coin scanner (สแกนทุก USDT-M futures), 4 strategies (momentum, mean reversion, vwap reversal, funding arb) + passive trend-following, ML (LGBM) |
+| AI / Intelligence | AI Brain (Claude), Market Intelligence, Strategy Bandit, Regime Classifier |
+| ความเสี่ยง | SL/TP, kill switch, drawdown healing / survival mode, live safety |
+| ปรับตัว | Bayesian strategy evolver, adaptive controller, compound manager, profit vault, daily profit engine |
+| รายงาน | Daily autopilot summary, `status.py`, `golive_check.py` |
+| ทดสอบ | backtest_dual, walkforward, validate_dual (66 checks) |
 
 ## คำสั่งสำคัญ
 
 ```bash
 python main.py                    # รันบอท (paper default)
-python scripts/validate.py        # ตรวจระบบทั้งหมด
-python scripts/daily_report.py    # รายงานรายวัน
-python scripts/preflight.py       # ก่อน live
+python scripts/validate_dual.py   # ตรวจระบบทั้งหมด (66 checks)
+python scripts/golive_check.py    # เช็คความพร้อมก่อน live
+./scripts/status.py               # ดูสถานะปัจจุบัน (equity, drawdown, regime)
 ```
 
 ## เส้นทางสู่เงินจริง

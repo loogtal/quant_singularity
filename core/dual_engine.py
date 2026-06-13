@@ -17,7 +17,7 @@ from config.dual_settings import (
     PASSIVE_MAX_POSITIONS,
 )
 from config.settings import DASHBOARD_ENABLED, LOOP_DELAY_SECONDS
-from core.engine import create_broker
+from core.broker import create_broker
 from core.logger import get_logger
 from core.state_manager import StateManager
 from core.trade_manager import TradeManager
