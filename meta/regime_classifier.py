@@ -62,8 +62,11 @@ class RegimeClassifier:
         trend   = intel.get("dominant_trend", "mixed")
         breadth = float(intel.get("breadth", 50))
 
-        # Extreme panic alone is sufficient to call BEAR
-        if fg < 15:
+        # Extreme panic alone is sufficient to call BEAR — unless breadth is
+        # strongly bullish (most coins above EMA50). Extreme fear + broad
+        # uptrend structure is historically a capitulation/bottom signal,
+        # not a confirmed downtrend; don't let sentiment alone override that.
+        if fg < 15 and breadth < 60:
             return REGIME_BEAR
 
         if base == REGIME_SIDEWAYS:

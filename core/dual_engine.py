@@ -189,8 +189,10 @@ class DualEngine:
 
             # After sync, reset _peak_equity to actual equity from saved state so
             # the drawdown gauge starts from a sensible baseline, not initial_cash.
-            # Without this, a compounded portfolio (equity > initial_cash) would
-            # show false drawdown on every restart, triggering survival mode.
+            # Without this, restoring an equity below initial_cash (e.g. after
+            # capital was reallocated to the other sleeve in a prior session)
+            # would show false drawdown on every restart, triggering survival mode
+            # for reasons unrelated to this session's trading performance.
             try:
                 import json as _j
                 from config.settings import STATE_FILE as _sf
@@ -198,9 +200,9 @@ class DualEngine:
                 _d = _saved.get("dual", {})
                 _p_eq = _d.get("passive", {}).get("equity", 0.0) or 0.0
                 _a_eq = _d.get("active",  {}).get("equity", 0.0) or 0.0
-                if _p_eq > self.passive_portfolio.initial_cash:
+                if _p_eq > 0:
                     self.passive_portfolio._peak_equity = float(_p_eq)
-                if _a_eq > self.active_portfolio.initial_cash:
+                if _a_eq > 0:
                     self.active_portfolio._peak_equity  = float(_a_eq)
             except Exception:
                 pass
