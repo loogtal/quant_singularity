@@ -72,7 +72,7 @@ class RegimeClassifier:
         if base == REGIME_SIDEWAYS:
             bear_signals = sum([
                 trend == "bear",
-                fg < 25,
+                fg < 25 and breadth < 60,
                 funding < -0.0002,
                 breadth < 30,
             ])
