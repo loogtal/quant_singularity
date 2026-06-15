@@ -6,6 +6,7 @@ from typing import Optional
 
 from config.dual_settings import (
     ACTIVE_CAPITAL,
+    ACTIVE_DAILY_LOSS_PCT,
     ACTIVE_MAX_DAILY_LOSS,
     ACTIVE_MAX_POSITION_SIZE,
     ACTIVE_STOP_LOSS,
@@ -68,6 +69,9 @@ class DualRiskManager:
         self.daily_loss_active = 0.0
         self.daily_loss_date = self._current_date()
         self.peak_equity = PASSIVE_CAPITAL + ACTIVE_CAPITAL
+        # Active daily-loss backstop, updated via update_capital() so it scales
+        # with compounding instead of staying pinned to the ACTIVE_CAPITAL seed.
+        self.active_daily_loss_cap = ACTIVE_MAX_DAILY_LOSS
         self.conflict_checker = DualConflictChecker()
         self.kelly = KellyCriterion()
         # Rolling win-rate: last 50 trades per strategy for more responsive Kelly sizing
@@ -102,6 +106,12 @@ class DualRiskManager:
         if current_date != self.daily_loss_date:
             self.daily_loss_active = 0.0
             self.daily_loss_date = current_date
+
+    def update_capital(self, active_capital: float) -> None:
+        """Call when active capital changes so the daily-loss backstop stays
+        proportional to current equity instead of the initial ACTIVE_CAPITAL seed."""
+        if active_capital > 0:
+            self.active_daily_loss_cap = active_capital * ACTIVE_DAILY_LOSS_PCT
 
     def check_conflict(self, strategy: str, signal: dict, passive_positions: list, active_positions: list) -> dict:
         return self.conflict_checker.check(strategy, signal, passive_positions, active_positions)
@@ -141,7 +151,7 @@ class DualRiskManager:
 
     def allow_active(self, portfolio, signal, market_state, max_position_value: Optional[float] = None):
         self.refresh_daily()
-        if self.daily_loss_active >= ACTIVE_MAX_DAILY_LOSS:
+        if self.daily_loss_active >= self.active_daily_loss_cap:
             return {
                 "allow_trade": False,
                 "reason": "ACTIVE DAILY LOSS LIMIT",

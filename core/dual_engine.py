@@ -11,7 +11,6 @@ from collections import deque
 from config.dual_settings import (
     ACTIVE_CAPITAL,
     ACTIVE_LEVERAGE,
-    ACTIVE_MAX_DAILY_LOSS,
     ACTIVE_MAX_POSITIONS,
     PASSIVE_CAPITAL,
     PASSIVE_LEVERAGE,
@@ -202,6 +201,24 @@ class DualEngine:
                     self.passive_portfolio._peak_equity = float(_p_eq)
                 if _a_eq > 0:
                     self.active_portfolio._peak_equity  = float(_a_eq)
+                if _a_eq > 0:
+                    # Seed the capital-dependent gates with the restored active
+                    # equity so they're correct from cycle 1, not just after the
+                    # first _rebalance_capital() call.
+                    self.daily_profit.update_capital(_a_eq)
+                    self.active_strategy.update_capital(_a_eq)
+                    self.risk_manager.update_capital(_a_eq)
+
+                # capital_allocator.active_weight/history are in-memory only and
+                # would otherwise reset to the initial 30/70 split on every
+                # restart, discarding any rebalancing drift. Restore from the
+                # last persisted snapshot.
+                _alloc = _d.get("capital_allocation", {})
+                _aw = _alloc.get("active_weight")
+                if _aw is not None:
+                    self.capital_allocator.active_weight = self.capital_allocator._clamp_active_weight(float(_aw))
+                if _alloc.get("history"):
+                    self.capital_allocator.history = _alloc["history"]
             except Exception:
                 pass
 
@@ -737,7 +754,7 @@ class DualEngine:
         near-breakeven.  This prevents existing losers from digging the hole deeper
         — the risk manager already blocks NEW entries, but this closes the back door.
         """
-        if self.risk_manager.daily_loss_active < ACTIVE_MAX_DAILY_LOSS:
+        if self.risk_manager.daily_loss_active < self.risk_manager.active_daily_loss_cap:
             return
         tightened = 0
         for pos in self.active_portfolio.positions:
@@ -755,7 +772,7 @@ class DualEngine:
         if tightened:
             self.log.warning(
                 f"[DailyLoss] cap hit (loss={self.risk_manager.daily_loss_active:.2f} "
-                f">= {ACTIVE_MAX_DAILY_LOSS:.2f}) — "
+                f">= {self.risk_manager.active_daily_loss_cap:.2f}) — "
                 f"tightened {tightened} active stop(s) to breakeven"
             )
 
@@ -772,10 +789,11 @@ class DualEngine:
                 f"CAPITAL REALLOCATED | {transfer['from']} -> {transfer['to']} "
                 f"| amount={transfer['amount']}"
             )
-        # Keep daily profit engine and active strategy's daily gate in sync
-        # with current active capital
+        # Keep daily profit engine, active strategy's daily gate, and the
+        # risk manager's daily-loss backstop in sync with current active capital
         self.daily_profit.update_capital(self.active_portfolio.equity)
         self.active_strategy.update_capital(self.active_portfolio.equity)
+        self.risk_manager.update_capital(self.active_portfolio.equity)
 
     # ── position management ─────────────────────────────────────────────────────
 
