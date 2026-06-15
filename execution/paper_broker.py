@@ -26,7 +26,10 @@ class PaperBroker:
         self,
         symbol,
         side,
-        size
+        size,
+        equity=None,
+        leverage=2,
+        stop_loss=None,
     ):
 
         market_price = self.get_price(symbol)
@@ -52,8 +55,21 @@ class PaperBroker:
 
             "status": "FILLED",
 
-            "timestamp": time.time()
+            "timestamp": time.time(),
+
+            "sl_order_id": None,
         }
+
+    # ============================================================
+    # STOP-ORDER MANAGEMENT (no-ops in paper mode — app-level
+    # trailing stop in TradeManager is the only exit mechanism)
+    # ============================================================
+
+    def place_stop_order(self, symbol, side, size, stop_price):
+        return None
+
+    def cancel_order(self, symbol, order_id):
+        pass
 
     # ============================================================
     # CLOSE POSITION

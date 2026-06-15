@@ -122,6 +122,50 @@ class LiveBroker:
         print(f"[LiveBroker] all retries failed: {last_err}")
         return None
 
+    # ── stop-order management (catastrophic backstop) ──────────────────────────
+    #
+    # We place ONE reduceOnly STOP_MARKET order at the position's initial
+    # stop-loss level so an open position is never fully naked on the exchange
+    # during a bot/network outage. The app-level trailing stop in
+    # TradeManager remains the primary, tighter exit mechanism and runs every
+    # cycle — this backstop is a dead-man's-switch at the original level, not
+    # kept in sync with every trailing update (that would mean cancel/replace
+    # every ~15s, which is its own source of risk).
+
+    def place_stop_order(self, symbol: str, side: str, size: float,
+                          stop_price: float | None) -> str | None:
+        if not stop_price:
+            return None
+        close_side = "sell" if side == "LONG" else "buy"
+        size = self._round_size(symbol, size)
+        try:
+            order = self._ex.create_order(
+                symbol, "STOP_MARKET", close_side, size,
+                params={
+                    "stopPrice":  round(stop_price, 8),
+                    "reduceOnly": True,
+                    "workingType": "MARK_PRICE",
+                },
+            )
+            self._log_order({
+                "symbol": symbol, "side": side, "size": size,
+                "stop_price": stop_price, "direction": "STOP_PLACED",
+                "order_id": order.get("id"), "status": order.get("status", "NEW"),
+            })
+            return order.get("id")
+        except Exception as e:
+            print(f"[LiveBroker] failed to place stop order for {symbol}: {e}")
+            return None
+
+    def cancel_order(self, symbol: str, order_id: str | None) -> None:
+        if not order_id:
+            return
+        try:
+            self._ex.cancel_order(order_id, symbol)
+            self._log_order({"symbol": symbol, "order_id": order_id, "direction": "STOP_CANCELLED"})
+        except Exception as e:
+            print(f"[LiveBroker] failed to cancel order {order_id} for {symbol}: {e}")
+
     # ── public API ────────────────────────────────────────────────────────────
 
     def execute_order(
@@ -131,6 +175,7 @@ class LiveBroker:
         size: float,
         equity: float | None = None,
         leverage: int = 2,
+        stop_loss: float | None = None,
     ) -> dict | None:
         price = self.get_price(symbol)
         eq    = equity if equity is not None else 0.0
@@ -165,10 +210,14 @@ class LiveBroker:
             "order_id":  order.get("id"),
         }
         self._log_order({**result, "direction": "OPEN"})
+
+        # Catastrophic backstop: reduceOnly STOP_MARKET at the initial stop level
+        result["sl_order_id"] = self.place_stop_order(symbol, side, result["size"], stop_loss)
         return result
 
     def close_position(self, position: dict) -> float:
         symbol     = position["symbol"]
+        self.cancel_order(symbol, position.get("sl_order_id"))
         size       = self._round_size(symbol, position["size"])
         close_side = "sell" if position["side"] == "LONG" else "buy"
         entry      = position["entry_price"]

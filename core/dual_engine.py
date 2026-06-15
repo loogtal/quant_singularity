@@ -389,6 +389,7 @@ class DualEngine:
             "signal_mode":    signal.get("signal_mode", ""),
             "passive_mode":   signal.get("passive_mode", ""),
             "confidence":     round(signal.get("confidence", 0.0), 4),
+            "sl_order_id":    fill.get("sl_order_id"),
         }
 
     def _update_position_price(self, portfolio: PortfolioEngine, position: dict) -> None:
@@ -580,6 +581,15 @@ class DualEngine:
         portfolio.cash         += half_margin + pnl
         portfolio.realized_pnl += pnl
         portfolio.update_equity()
+
+        # Replace the exchange-side backstop SL with one sized to the
+        # remaining position (the old order was sized for the full position
+        # and `broker.close_position` already cancelled it above).
+        if position.get("sl_order_id"):
+            position["sl_order_id"] = self.broker.place_stop_order(
+                position["symbol"], position["side"],
+                position["size"], position.get("stop_loss"),
+            )
 
         self.risk_manager.record_trade(position["strategy"], pnl)
         if position["strategy"] == "active":
@@ -912,7 +922,11 @@ class DualEngine:
         if size <= 0:
             return False
 
-        fill = self.broker.execute_order(signal["symbol"], signal["side"], size)
+        leverage = ACTIVE_LEVERAGE if strategy == "active" else PASSIVE_LEVERAGE
+        fill = self.broker.execute_order(
+            signal["symbol"], signal["side"], size,
+            leverage=leverage, stop_loss=signal.get("stop_loss"),
+        )
         if fill is None:
             return False
 
