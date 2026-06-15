@@ -219,6 +219,20 @@ class DualEngine:
                     self.capital_allocator.active_weight = self.capital_allocator._clamp_active_weight(float(_aw))
                 if _alloc.get("history"):
                     self.capital_allocator.history = _alloc["history"]
+
+                # state_manager's peak_equity/max_drawdown carry a stale
+                # high-water mark left over from the old single-engine
+                # architecture (peak=$35013 from a $10000 default, vs the
+                # much smaller dual-engine total equity ~$5000). That makes
+                # max_drawdown permanently stuck at ~97% even though nothing
+                # is actually down 97%. Re-baseline both to current total
+                # equity on startup, same as the per-portfolio peak resets
+                # above — these fields aren't consumed for risk decisions,
+                # only shown as raw stats.
+                _total_eq = _p_eq + _a_eq
+                if _total_eq > 0:
+                    self.state_manager.state["peak_equity"] = _total_eq
+                    self.state_manager.state["max_drawdown"] = 0
             except Exception:
                 pass
 
