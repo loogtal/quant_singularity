@@ -1,6 +1,7 @@
 """Dual strategy engine — passive (long-term wealth builder) + active (daily profit machine)."""
 
 import json
+import os
 import time
 from datetime import datetime, timezone
 from typing import Optional
@@ -145,15 +146,12 @@ class DualEngine:
         self._last_active_open_ts: float = 0.0
         # C2: Post-circuit-breaker elevated confidence window
         self._elevated_confidence_until: float = 0.0
-        # C3: Daily PnL gates (configurable via env vars)
-        import os
-        self._active_daily_pause_loss = float(os.getenv("QS_DAILY_PAUSE_LOSS", "-3.0"))
-        # Protect threshold: env override OR 2% of active capital (auto-scales with compound)
-        _protect_override = float(os.getenv("QS_DAILY_PROTECT_PROFIT", "0"))
-        self._active_daily_protect_profit = (
-            _protect_override if _protect_override > 0
-            else round(ACTIVE_CAPITAL * 0.02, 2)
-        )
+        # C3: Daily PnL gates (configurable via env vars; otherwise scale with
+        # current active equity so the gates don't stay pinned to the initial
+        # $300 seed as the account compounds — see _daily_pause_loss_threshold
+        # and _daily_protect_profit_threshold below)
+        self._daily_pause_loss_override   = float(os.getenv("QS_DAILY_PAUSE_LOSS", "0"))
+        self._daily_protect_profit_override = float(os.getenv("QS_DAILY_PROTECT_PROFIT", "0"))
         self._active_daily_paused_today: bool = False
         self._active_protect_mode_until: float = 0.0
         self._protect_mode_date = None
@@ -204,6 +202,21 @@ class DualEngine:
                     self.passive_portfolio._peak_equity = float(_p_eq)
                 if _a_eq > 0:
                     self.active_portfolio._peak_equity  = float(_a_eq)
+            except Exception:
+                pass
+
+            # risk_manager.peak_equity is statically initialized to
+            # PASSIVE_CAPITAL + ACTIVE_CAPITAL on every restart, which would
+            # silently reset the 15% portfolio drawdown kill-switch baseline
+            # below the true historical high-water mark once equity has
+            # compounded past that seed value. compound_manager already
+            # persists the real high-water mark to compound_state.json, so
+            # sync risk_manager off of it here.
+            try:
+                self.risk_manager.peak_equity = max(
+                    self.risk_manager.peak_equity,
+                    self.compound_manager._peak_equity,
+                )
             except Exception:
                 pass
 
@@ -527,8 +540,9 @@ class DualEngine:
 
         # Return half the margin + PnL to cash WITHOUT removing the position
         half_value  = round(position["position_value"] / 2, 2)
+        leverage    = float(position.get("leverage", 1)) or 1.0
+        margin      = position.get("margin", position["position_value"] / leverage)
         position["position_value"] = half_value
-        margin      = position.get("margin", position["position_value"] * 2)
         half_margin = round(margin / 2, 4)
         position["margin"] = half_margin
 
@@ -695,6 +709,28 @@ class DualEngine:
 
         return route
 
+    def _daily_pause_loss_threshold(self) -> float:
+        """Daily active P&L floor that pauses new entries for the rest of the day.
+
+        Defaults to -1% of current active equity (env override takes priority),
+        so the gate scales with compounding instead of staying pinned to the
+        $300 seed capital.
+        """
+        if self._daily_pause_loss_override < 0:
+            return self._daily_pause_loss_override
+        return round(-self.active_portfolio.equity * 0.01, 2)
+
+    def _daily_protect_profit_threshold(self) -> float:
+        """Daily active P&L ceiling that switches to funding_arb-only "protect" mode.
+
+        Defaults to +2% of current active equity (env override takes priority),
+        so the gate scales with compounding instead of staying pinned to the
+        $300 seed capital.
+        """
+        if self._daily_protect_profit_override > 0:
+            return self._daily_protect_profit_override
+        return round(self.active_portfolio.equity * 0.02, 2)
+
     def _enforce_active_daily_loss_protection(self) -> None:
         """
         When the daily active loss cap is hit, tighten all open active stops to
@@ -736,8 +772,10 @@ class DualEngine:
                 f"CAPITAL REALLOCATED | {transfer['from']} -> {transfer['to']} "
                 f"| amount={transfer['amount']}"
             )
-        # Keep daily profit engine in sync with current active capital
+        # Keep daily profit engine and active strategy's daily gate in sync
+        # with current active capital
         self.daily_profit.update_capital(self.active_portfolio.equity)
+        self.active_strategy.update_capital(self.active_portfolio.equity)
 
     # ── position management ─────────────────────────────────────────────────────
 
@@ -991,24 +1029,26 @@ class DualEngine:
                 self.active_strategy._daily_pnl  = 0.0
                 self.active_strategy._daily_date = _today
         _today_pnl = self.active_strategy._daily_pnl if hasattr(self.active_strategy, "_daily_pnl") else 0.0
-        if _today_pnl <= self._active_daily_pause_loss:
-            # C3a: -$3 daily loss → pause active for rest of day
+        _pause_loss = self._daily_pause_loss_threshold()
+        if _today_pnl <= _pause_loss:
+            # C3a: daily loss ≥1% of active equity → pause active for rest of day
             if not self._active_daily_paused_today:
                 self._active_daily_paused_today = True
                 self.log.warning(
-                    f"[DailyPnLGate] daily_pnl={_today_pnl:.2f} ≤ {self._active_daily_pause_loss:.2f} "
+                    f"[DailyPnLGate] daily_pnl={_today_pnl:.2f} ≤ {_pause_loss:.2f} "
                     f"— pausing active for rest of day"
                 )
             return
+        _protect_profit = self._daily_protect_profit_threshold()
         _protect_only_arb = (
-            _today_pnl >= self._active_daily_protect_profit
+            _today_pnl >= _protect_profit
             and active_mode != "funding_arb"
         )
         if _protect_only_arb:
-            # C3b: +$5 profit → protect mode, only funding_arb allowed
+            # C3b: daily profit ≥2% of active equity → protect mode, only funding_arb allowed
             if self._should_print_cycle():
                 self.log.info(
-                    f"[DailyPnLGate] daily_pnl={_today_pnl:.2f} ≥ {self._active_daily_protect_profit:.2f} "
+                    f"[DailyPnLGate] daily_pnl={_today_pnl:.2f} ≥ {_protect_profit:.2f} "
                     f"— protect mode, only funding_arb allowed"
                 )
             return

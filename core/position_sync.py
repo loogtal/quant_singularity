@@ -78,7 +78,11 @@ def sync_positions_from_state(
 
             try:
                 portfolio.positions.append(pos_copy)
-                portfolio.cash = max(0.0, portfolio.cash - pos_copy.get("position_value", 0.0))
+                leverage = float(pos_copy.get("leverage", 1)) or 1.0
+                margin = pos_copy.get("margin")
+                if margin is None:
+                    margin = pos_copy.get("position_value", 0.0) / leverage
+                portfolio.cash = max(0.0, portfolio.cash - margin)
                 restored += 1
                 _log.info(
                     f"[PositionSync] restored {label} {sym} {pos_copy.get('side')} "

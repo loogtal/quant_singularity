@@ -53,7 +53,8 @@ class PortfolioEngine:
         if not pos:
             return
 
-        margin = pos.get("margin", pos["position_value"])
+        leverage = float(pos.get("leverage", 1)) or 1.0
+        margin = pos.get("margin", pos["position_value"] / leverage)
         self.cash += margin + pnl
 
         self.realized_pnl += pnl

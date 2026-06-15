@@ -236,13 +236,6 @@ def _session_quality() -> float:
     return _SESSION_QUALITY_MAP.get(hour, 0.60)
 
 
-# ── daily profit tracking ──────────────────────────────────────────────────────
-# Scales automatically with ACTIVE_CAPITAL so the gate is always sensible
-# regardless of account size (1% profit target, 5% loss gate)
-_DAILY_TARGET_USDT = ACTIVE_CAPITAL * ACTIVE_DAILY_TARGET_PCT   # e.g. 300×0.01 = $3
-_DAILY_LOSS_GATE   = -(ACTIVE_CAPITAL * ACTIVE_DAILY_LOSS_PCT)  # e.g. 300×0.05 = -$15
-
-
 # ── main class ─────────────────────────────────────────────────────────────────
 
 class ActiveStrategy:
@@ -274,6 +267,7 @@ class ActiveStrategy:
         self._ema_slow   = 21
         self._daily_pnl  = 0.0   # caller updates this via record_daily_pnl()
         self._daily_date = None
+        self._daily_capital = ACTIVE_CAPITAL  # caller updates via update_capital()
 
     # ── param evolution hook ───────────────────────────────────────────────────
 
@@ -293,14 +287,22 @@ class ActiveStrategy:
             self._daily_date = today
         self._daily_pnl += pnl
 
+    def update_capital(self, capital: float) -> None:
+        """Call when active capital changes so the daily gate stays proportional
+        to current equity instead of the initial ACTIVE_CAPITAL seed."""
+        if capital > 0:
+            self._daily_capital = capital
+
     def _daily_gate_ok(self) -> bool:
         """False when daily profit target already hit or loss limit breached."""
         today = datetime.now(timezone.utc).date()
         if today != self._daily_date:
             return True
-        if self._daily_pnl >= _DAILY_TARGET_USDT:
+        target    = self._daily_capital * ACTIVE_DAILY_TARGET_PCT
+        loss_gate = -(self._daily_capital * ACTIVE_DAILY_LOSS_PCT)
+        if self._daily_pnl >= target:
             return False
-        if self._daily_pnl <= _DAILY_LOSS_GATE:
+        if self._daily_pnl <= loss_gate:
             return False
         return True
 
