@@ -66,6 +66,13 @@ class CompoundManager:
             self._last_weekly_ts      = float(data.get("last_weekly_ts", 0.0))
             self._peak_equity         = float(data.get("peak_equity", self._start_equity))
             self._compound_log        = data.get("compound_log", [])[-90:]
+            # Correct a stale start_equity written when capital config was much smaller
+            # (e.g. default 1000 before .env was set to 5000). If start_equity is less
+            # than 50% of actual initial capital, it's a legacy artefact — reset it so
+            # CAGR/growth displays reflect the real baseline.
+            actual_initial = self._passive.initial_cash + self._active.initial_cash
+            if actual_initial > 0 and self._start_equity < actual_initial * 0.5:
+                self._start_equity = actual_initial
         except Exception:
             self._start_equity = self._passive.initial_cash + self._active.initial_cash
             self._peak_equity  = self._start_equity

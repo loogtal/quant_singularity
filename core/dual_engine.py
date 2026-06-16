@@ -251,6 +251,39 @@ class DualEngine:
             except Exception:
                 pass
 
+            # Re-register restored positions with trade_manager so trailing-stop
+            # high-water marks (peak/trough) are seeded from entry_price rather
+            # than defaulting to current price on the first tick after restart.
+            for _pos in self.passive_portfolio.positions:
+                self.trade_manager.register(_pos["symbol"], _pos["entry_price"], _pos["side"])
+            for _pos in self.active_portfolio.positions:
+                self.trade_manager.register(_pos["symbol"], _pos["entry_price"], _pos["side"])
+
+            # Seed today's active daily loss from trades.db so the daily loss
+            # gate is correct from cycle 1 even after a same-day restart.
+            try:
+                import sqlite3 as _sql
+                import datetime as _dt
+                from config.settings import STORAGE_DIR as _SD
+                _db = _SD / "trades.db"
+                if _db.exists():
+                    _today = _dt.date.today().isoformat()
+                    _con = _sql.connect(str(_db))
+                    _row = _con.execute(
+                        "SELECT COALESCE(SUM(ABS(pnl)),0) FROM trades "
+                        "WHERE strategy='active' AND pnl<0 AND DATE(timestamp)=?",
+                        (_today,),
+                    ).fetchone()
+                    _con.close()
+                    if _row and _row[0]:
+                        self.risk_manager.daily_loss_active = float(_row[0])
+                        self.log.info(
+                            f"[PositionSync] seeded daily_loss_active={self.risk_manager.daily_loss_active:.2f} "
+                            f"from today's trades"
+                        )
+            except Exception:
+                pass
+
         except Exception as e:
             self.log.warning(f"[PositionSync] startup sync failed: {e}")
 
@@ -379,7 +412,7 @@ class DualEngine:
             "stop_loss":      signal.get("stop_loss"),
             "take_profit":    signal.get("take_profit"),
             "strategy":       strategy,
-            "regime":         signal.get("regime"),
+            "regime":         signal.get("regime") or "unknown",
             "opened_at":      time.time(),
             "min_hold_hours": signal.get("min_hold_hours", 0),
             "max_hold_hours": signal.get("max_hold_hours", 0),
@@ -450,7 +483,7 @@ class DualEngine:
                 "qty":         position.get("size", 0),
                 "pnl":         pnl,
                 "strategy":    position["strategy"],
-                "regime":      position.get("regime", "unknown"),
+                "regime":      position.get("regime") or "unknown",
                 "signal_mode": position.get("signal_mode", ""),
                 "confidence":  position.get("confidence", 0),
                 "reason":      reason,
@@ -1104,10 +1137,10 @@ class DualEngine:
         regime_key = market_state.get("regime", "global") or "global"
         lgbm_acc = self.lgbm.get_accuracy(regime_key) or self.lgbm.get_accuracy("global")
         if lgbm_acc > 0 and lgbm_acc < 0.45 and active_mode != "funding_arb":
-            if self._should_print_cycle():
-                self.log.info(
-                    f"[LGBM] acc={lgbm_acc:.3f} < 0.45 — pausing {active_mode} "
-                    f"(funding_arb still allowed)"
+            if self._active_idle_cycles % 100 == 0 or self._active_idle_cycles < 5:
+                self.log.warning(
+                    f"[LGBM] acc={lgbm_acc:.3f} < 0.45 — {active_mode} blocked "
+                    f"(idle={self._active_idle_cycles} cycles, funding_arb still allowed)"
                 )
             return
 
