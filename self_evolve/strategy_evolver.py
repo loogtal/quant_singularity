@@ -282,6 +282,20 @@ class _BayesOpt:
 
 # ── mini-backtests ────────────────────────────────────────────────────────────
 
+# Realistic trading costs — WITHOUT these the evolver optimises a cost-free fantasy
+# and converges to params that overfit a model that loses money live (proven in
+# scripts/walkforward_real.py: same strategy went +15% cost-free → −17% with costs).
+_TAKER_FEE  = 0.0004
+_SLIPPAGE   = 0.0003
+_FUNDING_8H = 0.0001
+
+
+def _trade_cost(position_value: float, hold_days: float) -> float:
+    """Round-trip taker fee + slippage on both legs, plus funding per 8h window held."""
+    return (position_value * (_TAKER_FEE + _SLIPPAGE) * 2
+            + position_value * _FUNDING_8H * 3 * max(0.0, hold_days))
+
+
 def _backtest_passive(
     closes: np.ndarray, highs: np.ndarray, lows: np.ndarray, params: dict
 ) -> float:
@@ -325,6 +339,7 @@ def _backtest_passive(
                 )
                 closed = True
             if closed:
+                pnl -= _trade_cost(position["position_value"], i - position["open_bar"])
                 cash += position["position_value"] + pnl
                 position = None
 
@@ -392,6 +407,7 @@ def _backtest_active(
                 elif l <= position["tp"]:
                     pnl = (position["entry"] - position["tp"]) * position["size"]; closed = True
             if closed:
+                pnl -= _trade_cost(position["position_value"], 0.0)  # intraday: funding ~0
                 cash += position["position_value"] + pnl
                 position = None
 

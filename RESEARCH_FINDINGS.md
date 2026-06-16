@@ -73,3 +73,22 @@ and will deploy capital the moment — and only the moment — a validated edge 
 - `strategy/passive_strategy.py`: `ADX_MIN_THRESHOLD` env-overridable (default
   kept 14 — raising it did not help in tests).
 - Cost model in `scripts/backtest_dual.py` env-overridable (`QS_BT_FEE/SLIP/FUNDING`).
+- **`self_evolve/strategy_evolver.py`: added realistic costs (fee+slippage+funding)
+  to the evolution mini-backtests.** Critical fix — without it the self-optimiser was
+  maximising a cost-free fantasy and persisting overfit params to `evolved_params.json`
+  (loaded at startup), actively pushing live params toward strategies that lose money.
+- **`execution/live_broker.py`: opt-in maker (post-only limit) entries**
+  (`QS_MAKER_ENTRY=true`, default off, TESTNET-FIRST). On a no-fill it skips the trade
+  rather than falling back to taker. Validation showed taker→maker is the dominant
+  cost lever, but resting limits can miss — hence opt-in.
+- **`tests/test_core_logic.py`: regression suite (11 tests, no pytest needed)** locking
+  in every bug fixed this cycle — run `python tests/test_core_logic.py`.
+
+## Known incompleteness (cannot be closed in-tooling)
+
+- **No validated edge** in the current (choppy) regime — the root blocker.
+- **Full bull/bear cycle untested**: Binance perp history via REST reaches ~600 days,
+  so trend-following's regime-dependent edge can't be tested across a real bull run.
+- **No live forward paper-trading track record**: the final pre-live step (run paper
+  for weeks, compare to backtest) requires calendar time.
+- **L2/tick/liquidation microstructure edges**: no historical data via REST.

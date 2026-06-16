@@ -16,7 +16,7 @@ import json
 import time
 from datetime import datetime, timezone
 
-from config.settings import LIVE_MODE, STORAGE_DIR
+from config.settings import LIVE_MODE, STORAGE_DIR, _env_bool, _env_float
 from data.binance_client import BinanceClient
 from data.market_data import MarketData
 from risk.live_safety import LiveSafety
@@ -26,6 +26,14 @@ _ORDER_LOG = STORAGE_DIR / "orders.jsonl"
 MAX_SPREAD_PCT  = 0.0008   # skip if spread > 0.08%
 MAX_RETRIES     = 3
 RETRY_DELAY_SEC = 2.0
+
+# Maker (post-only limit) entries — OFF by default. Validation showed execution
+# cost (taker fee + slippage) dominates the thin edge; maker fills cut that, but a
+# resting limit can MISS (price runs away), so this is opt-in and TESTNET-FIRST.
+# On a miss we SKIP the trade rather than fall back to taker (that would defeat it).
+MAKER_ENTRY        = _env_bool("QS_MAKER_ENTRY", False)
+MAKER_TIMEOUT_SEC  = _env_float("QS_MAKER_TIMEOUT_SEC", 8.0)
+MAKER_POLL_SEC     = 1.0
 
 
 class LiveBroker:
@@ -122,6 +130,49 @@ class LiveBroker:
         print(f"[LiveBroker] all retries failed: {last_err}")
         return None
 
+    def _maker_entry(self, symbol: str, order_side: str, size: float,
+                     params: dict) -> dict | None:
+        """
+        Place a post-only limit at the near touch and wait up to MAKER_TIMEOUT_SEC.
+        Returns the filled order, or None if it never fills (caller SKIPS the trade —
+        we do NOT fall back to a taker market order, which would erase the cost saving).
+        """
+        try:
+            ob = self._ex.fetch_order_book(symbol, limit=1)
+            bid = ob["bids"][0][0] if ob["bids"] else 0.0
+            ask = ob["asks"][0][0] if ob["asks"] else 0.0
+            if bid <= 0 or ask <= 0:
+                return None
+            # Rest on our own side so the order is a maker (won't cross the spread).
+            px = bid if order_side == "buy" else ask
+            px = float(self._ex.price_to_precision(symbol, px))
+            order = self._ex.create_order(
+                symbol, "limit", order_side, size, px,
+                params={**params, "postOnly": True},
+            )
+        except Exception as e:
+            print(f"[LiveBroker] maker entry rejected for {symbol}: {e}")
+            return None
+
+        oid = order.get("id")
+        waited = 0.0
+        while waited < MAKER_TIMEOUT_SEC:
+            time.sleep(MAKER_POLL_SEC)
+            waited += MAKER_POLL_SEC
+            try:
+                o = self._ex.fetch_order(oid, symbol)
+            except Exception:
+                continue
+            status = (o.get("status") or "").lower()
+            if status in ("closed", "filled") and float(o.get("filled", 0)) > 0:
+                return o
+            if status in ("canceled", "cancelled", "rejected", "expired"):
+                return None
+        # Timed out unfilled → cancel and skip
+        self.cancel_order(symbol, oid)
+        print(f"[LiveBroker] maker entry for {symbol} unfilled in {MAKER_TIMEOUT_SEC:.0f}s — skip")
+        return None
+
     # ── stop-order management (catastrophic backstop) ──────────────────────────
     #
     # We place ONE reduceOnly STOP_MARKET order at the position's initial
@@ -191,13 +242,21 @@ class LiveBroker:
         self._set_leverage(symbol, leverage)
         size        = self._round_size(symbol, size)
         order_side  = "buy" if side == "LONG" else "sell"
-        order       = self._execute_with_retry(
-            symbol, order_side, size, {"reduceOnly": False}
-        )
-        if order is None:
-            self._log_order({"symbol": symbol, "side": side, "size": size,
-                             "status": "FAILED", "error": "retries exhausted"})
-            return None
+        if MAKER_ENTRY:
+            order = self._maker_entry(symbol, order_side, size, {"reduceOnly": False})
+            if order is None:
+                # Maker miss = skip (no taker fallback). Not a failure — just no fill.
+                self._log_order({"symbol": symbol, "side": side, "size": size,
+                                 "status": "SKIPPED", "error": "maker entry unfilled"})
+                return None
+        else:
+            order = self._execute_with_retry(
+                symbol, order_side, size, {"reduceOnly": False}
+            )
+            if order is None:
+                self._log_order({"symbol": symbol, "side": side, "size": size,
+                                 "status": "FAILED", "error": "retries exhausted"})
+                return None
 
         fill = float(order.get("average") or order.get("price") or price)
         result = {
