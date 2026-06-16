@@ -34,3 +34,4 @@ uploads/
 # Misc
 *.log
 .pytest_cache/
+ponytail/

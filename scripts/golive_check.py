@@ -265,6 +265,31 @@ def _check_all_validations_pass():
     return "validate_dual.py: 66/66 PASS"
 
 
+# ── 5. Edge gate (HARD guard against deploying capital with no edge) ──────────
+
+def _check_edge_gate():
+    """
+    Block live deployment unless a real-strategy walk-forward shows validated edge.
+    This is the single most important capital-preservation guard: it enforces the
+    "decide NOT to trade when there is no edge" rule rather than burning capital on
+    a strategy that backtests negative. Slow (fetches history) — intentional, runs
+    once at go-live. Override only with QS_SKIP_EDGE_GATE=true (NOT recommended).
+    """
+    if os.environ.get("QS_SKIP_EDGE_GATE", "").lower() in ("true", "1", "yes"):
+        return "SKIPPED via QS_SKIP_EDGE_GATE (you are trading without validated edge)"
+    from scripts.edge_gate import gate_active, gate_passive
+    active_go  = gate_active(2.0, 10.0)
+    passive_go = gate_passive(9.0, 90.0)
+    if not (active_go or passive_go):
+        raise ValueError(
+            "edge_gate: NO-GO for both engines — no validated edge in the current "
+            "regime. Deploying real capital now would lose money. Run "
+            "`python scripts/edge_gate.py` for details. Override (unsafe): "
+            "QS_SKIP_EDGE_GATE=true"
+        )
+    return f"edge_gate: active={'GO' if active_go else 'NO-GO'} passive={'GO' if passive_go else 'NO-GO'}"
+
+
 # ── print ─────────────────────────────────────────────────────────────────────
 
 def _print_results():
@@ -326,6 +351,9 @@ def main():
     print(f"\n  {BOLD}Section 4: Pre-flight Simulation{RESET}")
     check("Regime router sane",         _check_regime_router)
     check("validate_dual.py 66/66",     _check_all_validations_pass)
+
+    print(f"\n  {BOLD}Section 5: Validated Edge (capital-preservation gate){RESET}")
+    check("Edge gate GO (real backtest)", _check_edge_gate)
 
     fails = _print_results()
     sys.exit(1 if fails > 0 else 0)

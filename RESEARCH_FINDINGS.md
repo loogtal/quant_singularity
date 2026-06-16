@@ -18,6 +18,9 @@ market adapter (no lookahead), simulate the live `TradeManager` exits
 | Funding carry (market-neutral) | `funding_carry_scan.py` | **Real but tiny (~1–4%/yr).** Timed harvest loses to rebalance cost. Static long-spot/short-perp on persistent-positive-funding alts ≈ +2%/yr. Safe base layer, not a money printer. |
 | Donchian breakout trend-following | `backtest_donchian.py` | **Regime-dependent.** Net −2.4% over an 18mo CHOPPY window; positive skew (one +8.8% trend quarter). Plausibly positive over a full cycle (incl. bull runs), but Binance perp history (~600d) can't test that here. |
 | Cross-sectional momentum (long strong / short weak, market-neutral) | `backtest_xsec_momentum.py` | **No reliable edge.** Sweep of lookback/rebal/k mostly negative; 30d momentum REVERSED (negative long-short spread = momentum crash). Best config +5% but Sharpe 0.25 / 29% DD (noise). Long-lookback spread ~1%/period but doesn't beat turnover cost. |
+| Cross-exchange divergence / stat-arb (Binance vs Gate.io) | `backtest_cross_exchange.py` | **No retail-capturable edge.** Over 1000×1m bars the cross-venue spread NEVER exceeded an optimistic 0.12% round-trip cost (max divergence 0.024–0.053%). HFT keeps venues aligned to <0.03%. Capturable/day = 0.000%. |
+
+L2 order-book microstructure and liquidation-cascade edges are NOT testable here — historical L2/tick/liquidation data is not available via REST (would need a stored dataset / live capture).
 
 ## The core lesson
 
@@ -33,6 +36,26 @@ trend-following that wins over cycles (not daily) + strict capital preservation.
 `python scripts/edge_gate.py` re-runs the real walk-forwards and emits GO/NO-GO
 per engine. GO requires: walk-forward total > 0, >55% of windows profitable, and
 worst-window drawdown < 25%. **As of last run: NO-GO for both engines.**
+
+## Is it "ready to trade"?
+
+**Yes — to run; no — to risk real money on current logic.** The bot is a complete,
+runnable system (paper mode is the safe default). But "ready to trade real money"
+is gated honestly:
+
+- `scripts/golive_check.py` now includes a **hard edge gate (Section 5)**: it runs
+  the real-strategy walk-forward and FAILS go-live unless an engine is GO. Today it
+  fails — by design, because deploying capital into a no-edge strategy loses money.
+- To go live you must either (a) develop an edge that passes `edge_gate.py`, or
+  (b) explicitly override with `QS_SKIP_EDGE_GATE=true` (NOT recommended — that is
+  trading without validated edge).
+
+**Go-live runbook:** `python scripts/edge_gate.py` → must show GO →
+`python scripts/golive_check.py` → must pass all sections → set `QS_LIVE_MODE=true`.
+Until edge_gate is GO, run in paper mode only.
+
+This is the responsible definition of "ready to trade": the system is built, safe,
+and will deploy capital the moment — and only the moment — a validated edge exists.
 
 ## Tools (reusable for any future edge hypothesis)
 
