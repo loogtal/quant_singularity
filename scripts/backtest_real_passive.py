@@ -105,12 +105,15 @@ def replay(data: dict, symbols: list[str],
             pos = positions[sym]
             pos["current_price"] = close
 
+            # Use the stop as of BEFORE this bar's trail update — trailing now then
+            # testing this same bar's low/high would be intrabar lookahead.
+            prev_sl = pos["stop_loss"]
             if use_tm:
-                action = tm.tick(pos)   # updates pos["stop_loss"]/["take_profit"] in place
+                action = tm.tick(pos)   # trails pos["stop_loss"]/["take_profit"] for NEXT bar
                 if action.get("action") == "close_partial" and not pos.get("_halved"):
                     cash += _close_half(pos, trades, sym, close, i)
 
-            sl, tp = pos["stop_loss"], pos["take_profit"]
+            sl, tp = prev_sl, pos["take_profit"]
             exit_price = reason = None
             if pos["side"] == "LONG":
                 if low <= sl:    exit_price, reason = sl, "STOP"
