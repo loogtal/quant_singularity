@@ -35,6 +35,14 @@ class EquityTracker:
             data = json.loads(_EQUITY_FILE.read_text())
             self._hourly = data.get("hourly", [])[-_MAX_HOURLY:]
             self._daily  = data.get("daily",  [])[-_MAX_DAILY:]
+            # Prune daily records from before a capital injection (>100% single-day jump).
+            # Keeps CAGR/growth metrics anchored to actual starting capital, not a stale
+            # low-capital era that makes growth look astronomically inflated.
+            if len(self._daily) >= 2:
+                for i in range(1, len(self._daily)):
+                    if self._daily[i]["total"] > self._daily[i - 1]["total"] * 2:
+                        self._daily = self._daily[i:]
+                        break
             if self._daily:
                 try:
                     last_date = self._daily[-1].get("date", "")
