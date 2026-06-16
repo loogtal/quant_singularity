@@ -70,7 +70,7 @@ N_FEATURES = len(FEATURE_NAMES)   # 22
 
 def _ema_scalar(arr: np.ndarray, period: int) -> float:
     if len(arr) == 0:
-        return float(arr[-1]) if len(arr) else 0.0
+        return 0.0
     k = 2.0 / (period + 1)
     v = float(arr[0])
     for x in arr[1:]:

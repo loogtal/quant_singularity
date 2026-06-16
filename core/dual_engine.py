@@ -1452,7 +1452,7 @@ class DualEngine:
             # Confidence-weighted position size: scale ±20% based on signal quality
             max_val   = decision.get("max_position_value", 0.0)
             conf      = signal.get("confidence", 0.65)
-            conf_mult = 0.70 + (conf - 0.50) * 1.5   # 0.5 conf → 0.75×, 0.9 conf → 1.30×
+            conf_mult = 0.70 + (conf - 0.50) * 1.5   # 0.5 conf → 0.70×, 0.9 conf → 1.30× (clamped 0.60–1.35)
             max_val   = round(max_val * float(min(1.35, max(0.60, conf_mult))), 2)
 
             # ATR-normalized sizing: halve position in high-vol environments
@@ -1499,7 +1499,7 @@ class DualEngine:
             except Exception:
                 pass
 
-            signal["max_position_value"] = max_val * size_mult
+            signal["max_position_value"] = max_val
             opened = self._open_position(self.active_portfolio, signal, "active")
             if opened:
                 # C1: Record timestamp to enforce minimum spacing between active opens

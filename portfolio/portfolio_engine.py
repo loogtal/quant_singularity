@@ -40,7 +40,7 @@ class PortfolioEngine:
         return None
 
     def add_position(self, position):
-        leverage = float(position.get("leverage", 1))
+        leverage = float(position.get("leverage", 1)) or 1.0
         margin   = round(position["position_value"] / leverage, 4)
         position["margin"] = margin          # stored for close/half-close
         self.positions.append(position)
@@ -117,7 +117,7 @@ class PortfolioEngine:
 
         self.drawdown = max(
             0,
-            (self._peak_equity - self.equity) / self._peak_equity
+            (self._peak_equity - self.equity) / max(self._peak_equity, 1.0)
         )
 
     def current_drawdown(self) -> float:

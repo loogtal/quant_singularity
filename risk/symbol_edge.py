@@ -92,8 +92,9 @@ class SymbolEdgeTracker:
             fraction = self._kelly.half_kelly_fraction(
                 s["winrate"], s["avg_win"], s["avg_loss"]
             )
-            # Map fraction (0.01–0.20) to multiplier (0.40–1.40)
-            # Default fraction ~0.08 → 1.0×
+            # Map fraction (0.01–0.20) linearly to multiplier (0.40–1.40):
+            #   fraction 0.08 → 0.80×, 0.12 → 1.0×, 0.20 → 1.40×.
+            # A neutral 50%-winrate symbol yields fraction ≈0.13 → ≈1.07×.
             mult = 0.40 + (fraction / 0.20) * 1.0
             return round(float(min(1.40, max(0.40, mult))), 3)
 

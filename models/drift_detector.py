@@ -96,10 +96,10 @@ class DriftDetector:
             data = json.loads(_DRIFT_FILE.read_text())
             self._last_retrain_ts = float(data.get("last_retrain_ts", 0.0))
             self._consecutive_red = int(data.get("consecutive_red", 0))
-            ref = data.get("reference_stats")
-            if ref:
-                self._reference_mean = np.array(ref["mean"], dtype=np.float32)
-                self._reference_std  = np.array(ref["std"],  dtype=np.float32)
+            # Restore reference sample so PSI computation works immediately on restart
+            ref_sample = data.get("reference_sample")
+            if ref_sample:
+                self._reference = np.array(ref_sample, dtype=np.float32)
         except Exception:
             pass
 
@@ -113,10 +113,10 @@ class DriftDetector:
                 "saved_at":        datetime.now(timezone.utc).isoformat(),
             }
             if self._reference is not None:
-                payload["reference_stats"] = {
-                    "mean": self._reference.mean(axis=0).tolist(),
-                    "std":  self._reference.std(axis=0).tolist(),
-                }
+                # Persist a representative sample (every 4th row, max 100 rows)
+                # so PSI can resume immediately after restart without a full retrain
+                sample = self._reference[::4][:100]
+                payload["reference_sample"] = sample.tolist()
             _DRIFT_FILE.write_text(json.dumps(payload, indent=2))
         except Exception:
             pass

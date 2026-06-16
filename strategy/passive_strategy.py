@@ -25,12 +25,17 @@ from config.dual_settings import (
     PASSIVE_REGIME_BLACKLIST,
 )
 from data.market_data import MarketData
+from config.settings import _env_float
 
 
 # ── quality-filter constants ───────────────────────────────────────────────────
 
-ADX_MIN_THRESHOLD    = 14     # require at least moderate trend strength
-ADX_MIN_THRESHOLD_TREND = 12  # relaxed threshold when mode forces a direction (e.g. short in BEAR)
+# ADX gate. Default kept at 14 — a real-strategy walk-forward sweep (14/22/28 via
+# backtest_real_passive.py) showed RAISING ADX does NOT help (−19.6% → −22.3% → −25.0%);
+# win rate stayed ~0% in choppy quarters even at ADX≥28. So trend-strength filtering is
+# NOT passive's problem (entry/exit timing is). Env-overridable for further tuning.
+ADX_MIN_THRESHOLD    = _env_float("QS_PASSIVE_ADX_MIN", 14.0)
+ADX_MIN_THRESHOLD_TREND = _env_float("QS_PASSIVE_ADX_MIN_TREND", 12.0)
 VOLUME_CONFIRM_MULT  = 1.1    # volume must be 1.1× the 20-bar average
 
 # ATR multipliers for TP and SL

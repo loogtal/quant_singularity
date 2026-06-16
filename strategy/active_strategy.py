@@ -29,6 +29,20 @@ from config.dual_settings import (
 )
 from data.funding_data import FundingData
 from data.market_data import MarketData
+from config.settings import _env_float
+
+
+# Per-mode minimum confidence to open a trade. Walk-forward (scripts/walkforward_real.py)
+# showed momentum's thin gross edge is eaten by cost at high trade frequency; raising the
+# momentum floor 0.65→0.72 cut overtrading and lifted net return (+1.9%→+3.4%/3mo at maker
+# cost). Env-overridable so the floor can be re-tuned without code edits.
+_MODE_MIN_CONF = {
+    "momentum":       _env_float("QS_ACTIVE_MIN_CONF_MOMENTUM", 0.72),
+    "mean_reversion": _env_float("QS_ACTIVE_MIN_CONF_MEANREV",  0.62),
+    "vwap_reversal":  _env_float("QS_ACTIVE_MIN_CONF_VWAP",     0.62),
+    "funding_arb":    _env_float("QS_ACTIVE_MIN_CONF_FUNDING",  0.55),
+    "breakout":       _env_float("QS_ACTIVE_MIN_CONF_BREAKOUT", 0.65),
+}
 
 
 # ── technical helpers ──────────────────────────────────────────────────────────
@@ -735,10 +749,10 @@ class ActiveStrategy:
         sq_adj = round((sq - 1.0) * 0.16, 4)   # sq=1.0→0, sq=0.55→-0.072
         conf   = round(float(np.clip(conf + sq_adj, 0.40, 0.95)), 4)
 
-        # Per-mode minimum confidence gate — must match or exceed APC threshold
-        _mode_min = {"momentum": 0.65, "mean_reversion": 0.62, "vwap_reversal": 0.62,
-                     "funding_arb": 0.55, "breakout": 0.65}
-        if conf < _mode_min.get(mode, 0.62):
+        # Per-mode minimum confidence gate — must match or exceed APC threshold.
+        # Floors live in _MODE_MIN_CONF (env-overridable); momentum raised to 0.72
+        # per walk-forward evidence that fewer/higher-conviction trades beat cost drag.
+        if conf < _MODE_MIN_CONF.get(mode, 0.62):
             return self._build_signal(symbol, "HOLD", 0.0)
 
         return self._build_signal(symbol, side, price, conf)

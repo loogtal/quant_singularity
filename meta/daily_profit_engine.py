@@ -22,6 +22,7 @@ from datetime import datetime, timezone
 from config.settings import _env_float, STORAGE_DIR
 
 _WITHDRAWAL_LOG = STORAGE_DIR / "withdrawal_log.json"
+_STATE_FILE     = STORAGE_DIR / "daily_profit_state.json"
 _COMPOUND_BUFFER_PCT = 0.20   # keep 20% of daily profits for compounding
 
 # THB/USD exchange rate for display (update via QS_THB_PER_USD env var)
@@ -60,8 +61,32 @@ class DailyProfitEngine:
         self._pnl       = 0.0        # today's realized PnL (USDT)
         self._day       = _utc_today()
         self._target    = self._compute_target(active_capital)
+        # Restore today's PnL so the LOCKED/HUNTING phase survives a mid-day restart.
+        self._load()
 
     # ── internals ────────────────────────────────────────────────────────────
+
+    def _load(self) -> None:
+        if not _STATE_FILE.exists():
+            return
+        try:
+            data = json.loads(_STATE_FILE.read_text())
+            # Only restore if the saved snapshot is from the current UTC day;
+            # a stale day means the daily window already rolled over → start at 0.
+            if int(data.get("day", 0)) == self._day:
+                self._pnl = float(data.get("pnl", 0.0))
+        except Exception:
+            pass
+
+    def _save(self) -> None:
+        try:
+            _STATE_FILE.write_text(json.dumps({
+                "day":      self._day,
+                "pnl":      round(self._pnl, 4),
+                "saved_at": datetime.now(timezone.utc).isoformat(),
+            }, indent=2))
+        except Exception:
+            pass
 
     @staticmethod
     def _compute_target(capital: float) -> float:
@@ -74,6 +99,7 @@ class DailyProfitEngine:
         if today != self._day:
             self._pnl = 0.0
             self._day = today
+            self._save()
 
     # ── public API ────────────────────────────────────────────────────────────
 
@@ -104,6 +130,7 @@ class DailyProfitEngine:
         """Call after every active trade close."""
         self._maybe_reset()
         self._pnl += pnl
+        self._save()
 
     def get_phase(self) -> str:
         self._maybe_reset()
@@ -153,6 +180,7 @@ class DailyProfitEngine:
         if amount <= 0:
             return
         self._pnl = max(0.0, self._pnl - amount)
+        self._save()
         try:
             records = json.loads(_WITHDRAWAL_LOG.read_text()) if _WITHDRAWAL_LOG.exists() else []
             records.append({

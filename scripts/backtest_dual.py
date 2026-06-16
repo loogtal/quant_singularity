@@ -21,7 +21,17 @@ load_dotenv()
 
 import numpy as np
 
-TAKER_FEE = 0.0004   # Binance USDT-M taker fee (0.04%) — charged on open AND close
+import os as _os
+# Cost model — overridable via env so cost-sensitivity sweeps need no code edits.
+#   Taker (default): 0.04% fee + 0.03% slippage per side.
+#   Maker:   QS_BT_FEE=0.0002 QS_BT_SLIP=0.0  (limit fills, no spread paid)
+#   Zero:    QS_BT_FEE=0 QS_BT_SLIP=0 QS_BT_FUNDING=0  (is the SIGNAL itself profitable?)
+TAKER_FEE  = float(_os.getenv("QS_BT_FEE", "0.0004"))
+SLIPPAGE   = float(_os.getenv("QS_BT_SLIP", "0.0003"))
+FUNDING_8H = float(_os.getenv("QS_BT_FUNDING", "0.0001"))
+# Stop opening new trades once equity falls to this fraction of initial — mirrors
+# the live kill switch so the backtest can't "trade through" a halt it would hit.
+KILL_FRACTION = 0.85
 
 from config.dual_settings import (
     ACTIVE_CAPITAL,
@@ -109,14 +119,18 @@ class PassiveBacktest:
         self.trades: list[dict] = []
         self.equity_curve: list[float] = []
         self.held_symbols: set[str] = set()      # expose to conflict checker
+        self.halted: bool = False                # kill-switch latch
 
     # ─── internal ────────────────────────────────────────────────────────────
 
     def _close(self, sym: str, pnl: float, reason: str, hold_days: int) -> None:
         pos = self.positions.pop(sym)
         self.held_symbols.discard(sym)
-        fee = pos["position_value"] * TAKER_FEE * 2  # open + close
-        net_pnl = pnl - fee
+        # Costs: taker fee + slippage on both legs, plus funding for every 8h
+        # window held (3 per day) — multi-day passive holds pay a lot of funding.
+        cost  = pos["position_value"] * (TAKER_FEE + SLIPPAGE) * 2
+        cost += pos["position_value"] * FUNDING_8H * 3 * max(0, hold_days)
+        net_pnl = pnl - cost
         self.cash += pos["position_value"] + net_pnl
         self.trades.append({
             "symbol": sym,
@@ -199,10 +213,16 @@ class PassiveBacktest:
                     i,
                 )
 
+            # Kill-switch latch — stop opening once equity drops below halt line
+            if self.equity_curve and self.equity_curve[-1] < self.initial * KILL_FRACTION:
+                self.halted = True
+
             # 2. Try to open new positions
-            for sym in symbols:
-                if sym in self.positions or len(self.positions) >= PASSIVE_MAX_POSITIONS:
+            for sym in (symbols if not self.halted else []):
+                if len(self.positions) >= PASSIVE_MAX_POSITIONS:
                     break
+                if sym in self.positions:
+                    continue   # already holding this symbol — check the next one
                 closes = dfs[sym]["close"].values[: i + 1]
                 ema50 = _ema(closes, 50)
                 ema200 = _ema(closes, 200)
@@ -246,6 +266,7 @@ class PassiveBacktest:
             "max_drawdown_pct": round(max_dd * 100, 2),
             "final_equity": round(final_eq, 2),
             "avg_hold_days": hold_avg,
+            "halted": self.halted,
         }
 
 
@@ -266,8 +287,10 @@ class ActiveBacktest:
         self.positions: dict[str, dict] = {}
         self.trades: list[dict] = []
         self.equity_curve: list[float] = []
+        self.equity_ts: list[int] = []        # ms timestamp per equity snapshot
         self.daily_loss: float = 0.0
         self.current_day: int = -1
+        self.halted: bool = False             # kill-switch latch
 
     # ─── internal ────────────────────────────────────────────────────────────
 
@@ -317,8 +340,12 @@ class ActiveBacktest:
             (price - pos["entry"]) * pos["size"] if pos["side"] == "LONG"
             else (pos["entry"] - price) * pos["size"]
         )
-        fee = pos["position_value"] * TAKER_FEE * 2  # open + close
-        pnl = gross_pnl - fee
+        # Costs: taker fee + slippage on both legs (1h bars), plus funding for
+        # each full 8h window held — critical for active's tight 0.7% SL.
+        hold_hours = max(0, bar_idx - pos.get("open_bar", bar_idx))
+        cost  = pos["position_value"] * (TAKER_FEE + SLIPPAGE) * 2
+        cost += pos["position_value"] * FUNDING_8H * (hold_hours // 8)
+        pnl = gross_pnl - cost
         self.cash += pos["position_value"] + pnl
         if pnl < 0:
             self.daily_loss += abs(pnl)
@@ -366,11 +393,18 @@ class ActiveBacktest:
                     elif low <= pos["tp"]:
                         self._close(sym, pos["tp"], "TP", i)
 
-            # 2. Open if within window and daily loss OK
-            if in_window and self.daily_loss < ACTIVE_MAX_DAILY_LOSS:
+            # Kill-switch latch: once equity drops below the halt line, stop
+            # opening new trades for the rest of the run (still manage open ones).
+            if self.equity_curve and self.equity_curve[-1] < self.initial * KILL_FRACTION:
+                self.halted = True
+
+            # 2. Open if within window, daily loss OK, and not halted
+            if in_window and not self.halted and self.daily_loss < ACTIVE_MAX_DAILY_LOSS:
                 for sym in symbols:
-                    if sym in self.positions or len(self.positions) >= ACTIVE_MAX_POSITIONS:
+                    if len(self.positions) >= ACTIVE_MAX_POSITIONS:
                         break
+                    if sym in self.positions:
+                        continue   # already holding this symbol — check the next one
                     closes = dfs[sym]["close"].values[: i + 1]
                     side = self._signal(closes, ts_ms)
                     if side == "HOLD":
@@ -390,6 +424,7 @@ class ActiveBacktest:
                         "position_value": value,
                         "tp": round(tp, 6),
                         "sl": round(sl, 6),
+                        "open_bar": i,
                     }
 
             # 3. Snapshot equity
@@ -402,6 +437,7 @@ class ActiveBacktest:
                 )
             invested = sum(p["position_value"] for p in self.positions.values())
             self.equity_curve.append(self.cash + invested + unrealized)
+            self.equity_ts.append(ts_ms)
 
         return self._stats()
 
@@ -412,6 +448,7 @@ class ActiveBacktest:
         final_eq = self.equity_curve[-1] if self.equity_curve else self.cash
         max_dd = _max_drawdown(self.equity_curve, self.initial)
         daily_loss_hits = sum(1 for t in self.trades if t["reason"] == "EOD" and t["pnl"] < 0)
+        dm = _daily_metrics(self.equity_ts, self.equity_curve)
         return {
             "strategy": "active",
             "trades": n,
@@ -422,10 +459,59 @@ class ActiveBacktest:
             "max_drawdown_pct": round(max_dd * 100, 2),
             "final_equity": round(final_eq, 2),
             "eod_closes": daily_loss_hits,
+            "halted": self.halted,
+            # Daily-profit metrics — the real test of the "profit every day" goal
+            "days": dm["days"],
+            "profitable_days_pct": dm["profitable_days_pct"],
+            "avg_daily_pnl": dm["avg_daily_pnl"],
+            "worst_day_pnl": dm["worst_day_pnl"],
+            "best_day_pnl": dm["best_day_pnl"],
+            "daily_sharpe": dm["daily_sharpe"],
         }
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
+
+def _daily_metrics(timestamps: list[int], equity_curve: list[float]) -> dict:
+    """
+    Group an intrabar equity curve into UTC days and measure daily profitability —
+    the real test of the "profit every day" goal. Sharpe is computed on genuine
+    end-of-day returns (not the zero-padded per-bar curve that inflates Sharpe).
+    """
+    empty = {
+        "days": 0, "profitable_days_pct": 0.0, "avg_daily_pnl": 0.0,
+        "worst_day_pnl": 0.0, "best_day_pnl": 0.0, "daily_sharpe": 0.0,
+    }
+    if not timestamps or len(timestamps) != len(equity_curve):
+        return empty
+
+    # Last equity seen on each UTC day
+    eod: dict[int, float] = {}
+    for ts, eq in zip(timestamps, equity_curve):
+        eod[int(ts) // 86_400_000] = eq
+    days_sorted = sorted(eod)
+    if len(days_sorted) < 2:
+        return empty
+
+    eq_series   = [eod[d] for d in days_sorted]
+    daily_pnl   = [eq_series[i] - eq_series[i - 1] for i in range(1, len(eq_series))]
+    daily_ret   = [
+        (eq_series[i] - eq_series[i - 1]) / eq_series[i - 1]
+        for i in range(1, len(eq_series)) if eq_series[i - 1] > 0
+    ]
+    import numpy as _np
+    arr = _np.array(daily_ret) if daily_ret else _np.array([0.0])
+    sharpe = float(_np.mean(arr) / _np.std(arr) * _np.sqrt(365)) if _np.std(arr) > 0 else 0.0
+    prof = sum(1 for p in daily_pnl if p > 0)
+    return {
+        "days": len(daily_pnl),
+        "profitable_days_pct": round(prof / len(daily_pnl) * 100, 1),
+        "avg_daily_pnl": round(sum(daily_pnl) / len(daily_pnl), 2),
+        "worst_day_pnl": round(min(daily_pnl), 2),
+        "best_day_pnl": round(max(daily_pnl), 2),
+        "daily_sharpe": round(sharpe, 2),
+    }
+
 
 def _max_drawdown(equity_curve: list[float], initial: float) -> float:
     if not equity_curve:
@@ -472,6 +558,13 @@ def _print_section(title: str, stats: dict) -> None:
         "final_equity": "Final equity",
         "avg_hold_days": "Avg hold (days)",
         "eod_closes": "EOD force-closes",
+        "halted": "Kill-switch halted",
+        "days": "Days measured",
+        "profitable_days_pct": "Profitable days %",
+        "avg_daily_pnl": "Avg daily P&L",
+        "worst_day_pnl": "Worst day P&L",
+        "best_day_pnl": "Best day P&L",
+        "daily_sharpe": "Daily Sharpe",
     }
     for k, label in labels.items():
         if k not in stats:
@@ -479,6 +572,10 @@ def _print_section(title: str, stats: dict) -> None:
         val = stats[k]
         if k == "winrate":
             print(f"  {label:<22} {val:.1%}")
+        elif k == "profitable_days_pct":
+            print(f"  {label:<22} {val:.1f}%")
+        elif isinstance(val, bool):
+            print(f"  {label:<22} {'YES' if val else 'No'}")
         elif isinstance(val, float):
             print(f"  {label:<22} {val:,.2f}")
         else:

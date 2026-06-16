@@ -65,6 +65,7 @@ class CompoundManager:
             self._start_equity        = float(data.get("start_equity", 0.0))
             self._last_weekly_ts      = float(data.get("last_weekly_ts", 0.0))
             self._peak_equity         = float(data.get("peak_equity", self._start_equity))
+            self._today_ordinal       = int(data.get("today_ordinal", 0))
             self._compound_log        = data.get("compound_log", [])[-90:]
             # Correct a stale start_equity written when capital config was much smaller
             # (e.g. default 1000 before .env was set to 5000). If start_equity is less
@@ -84,6 +85,9 @@ class CompoundManager:
                 "start_equity":    round(self._start_equity, 2),
                 "last_weekly_ts":  self._last_weekly_ts,
                 "peak_equity":     round(self._peak_equity, 2),
+                # Persist the daily-compound guard so a same-day restart cannot
+                # trigger a second compound for a day already compounded.
+                "today_ordinal":   self._today_ordinal,
                 "compound_log":    self._compound_log[-90:],
                 "saved_at":        datetime.now(timezone.utc).isoformat(),
             }, indent=2))
