@@ -73,6 +73,7 @@ class CompoundManager:
             actual_initial = self._passive.initial_cash + self._active.initial_cash
             if actual_initial > 0 and self._start_equity < actual_initial * 0.5:
                 self._start_equity = actual_initial
+                self._save()   # persist corrected baseline immediately
         except Exception:
             self._start_equity = self._passive.initial_cash + self._active.initial_cash
             self._peak_equity  = self._start_equity

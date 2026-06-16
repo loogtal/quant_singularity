@@ -82,7 +82,7 @@ class RegimeClassifier:
             bull_signals = sum([
                 trend == "bull",
                 fg > 65,
-                funding > 0.0001,
+                funding > 0,   # any positive funding = longs paying = mild bull
                 breadth > 65,
             ])
             if bull_signals >= 3:

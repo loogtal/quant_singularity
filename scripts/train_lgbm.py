@@ -49,11 +49,9 @@ def main() -> None:
 
     print(f"Training LightGBM on {len(args.symbols)} symbols × {args.bars} bars ({TIMEFRAME})")
 
-    # Accumulate closes per regime across all symbols
-    regime_closes:  dict[str, list[np.ndarray]] = {}
-    regime_volumes: dict[str, list[np.ndarray]] = {}
-    global_closes:  list[np.ndarray] = []
-    global_volumes: list[np.ndarray] = []
+    # Per-symbol data lists for train_multi(); also grouped by regime
+    global_data: list[tuple[np.ndarray, np.ndarray]] = []
+    regime_data: dict[str, list[tuple[np.ndarray, np.ndarray]]] = {}
 
     for sym in args.symbols:
         print(f"  Fetching {sym}...", end=" ", flush=True)
@@ -65,41 +63,31 @@ def main() -> None:
 
         closes  = df["close"].values
         volumes = df["volume"].values
-        global_closes.append(closes)
-        global_volumes.append(volumes)
+        global_data.append((closes, volumes))
 
-        # Classify the last bar's regime
-        sample = {
-            "close":       float(closes[-1]),
-            "ema50":       float(np.mean(closes[-50:])) if len(closes) >= 50 else float(closes[-1]),
-            "ema200":      float(np.mean(closes[-200:])) if len(closes) >= 200 else float(closes[-1]),
-            "volatility":  float(np.std(np.diff(closes[-21:]) / closes[-21:-1])) if len(closes) >= 21 else 0.0,
-            "change_24h":  float((closes[-1] - closes[-96]) / closes[-96]) if len(closes) >= 96 else 0.0,
-        }
-        regime = classifier.classify(sample)
-        regime_closes.setdefault(regime,  []).append(closes)
-        regime_volumes.setdefault(regime, []).append(volumes)
+        # Classify using the last 200+ bars of closes (NOT a dict — classifier needs array)
+        regime = classifier.classify(closes)
+        regime_data.setdefault(regime, []).append((closes, volumes))
         print(f"regime={regime}  bars={len(closes)}")
 
     print()
-    regimes_to_train = [args.regime] if args.regime else (["global"] + list(regime_closes.keys()))
+    regimes_to_train = [args.regime] if args.regime else (["global"] + list(regime_data.keys()))
 
     for regime in regimes_to_train:
         if regime == "global":
-            if not global_closes:
+            if not global_data:
                 print("[global] no data — skip")
                 continue
-            closes_arr  = np.concatenate(global_closes)
-            volumes_arr = np.concatenate(global_volumes)
+            data = global_data
         else:
-            if regime not in regime_closes:
+            if regime not in regime_data:
                 print(f"[{regime}] no data — skip")
                 continue
-            closes_arr  = np.concatenate(regime_closes[regime])
-            volumes_arr = np.concatenate(regime_volumes[regime])
+            data = regime_data[regime]
 
-        print(f"[{regime}] training on {len(closes_arr):,} bars...", end=" ", flush=True)
-        acc = lgbm.train(closes_arr, volumes_arr, regime=regime)
+        n_bars = sum(len(c) for c, _ in data)
+        print(f"[{regime}] training on {n_bars:,} bars from {len(data)} symbols...", end=" ", flush=True)
+        acc = lgbm.train_multi(data, regime=regime)
         if acc > 0:
             print(f"accuracy={acc:.3f}  {'OK' if acc >= 0.52 else 'BELOW THRESHOLD — consider more data'}")
         else:
